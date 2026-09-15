@@ -14,8 +14,9 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
         val callExecutor = CallExecutor(applicationContext, dao)
         
         // Stale Job Recovery
-        dao.recoverStaleSmsJobs()
-        dao.failStaleSmsJobs()
+        val smsCutoff = System.currentTimeMillis() - 120000L // 2 minute stale cutoff for SMS
+        dao.recoverStaleSmsJobs(smsCutoff)
+        dao.failStaleSmsJobs(smsCutoff)
         val cutoff = System.currentTimeMillis() - 60000L // 1 minute stale cutoff for calls
         dao.recoverStaleCallJobs(cutoff)
         dao.failStaleCallJobs(cutoff)

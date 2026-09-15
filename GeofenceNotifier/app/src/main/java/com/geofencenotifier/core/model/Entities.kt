@@ -75,6 +75,7 @@ data class SmsJob(
     val status: String,
     val attemptCount: Int = 0,
     val lastError: String? = null,
+    val sendingStartedAt: Long? = null,
     val sentAt: Long? = null
 )
 

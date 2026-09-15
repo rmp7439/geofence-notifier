@@ -36,10 +36,10 @@ interface AppDao {
     @Query("SELECT * FROM SmsJob WHERE id = :id") suspend fun getSmsJobSync(id: Long): SmsJob?
     @Query("SELECT * FROM SmsJob WHERE status IN ('PENDING', 'RETRYING')") suspend fun getPendingSmsJobsSync(): List<SmsJob>
     
-    @Query("UPDATE SmsJob SET status = 'SENDING', attemptCount = attemptCount + 1 WHERE id = :id AND status IN ('PENDING', 'RETRYING')") suspend fun claimSmsJob(id: Long): Int
+    @Query("UPDATE SmsJob SET status = 'SENDING', attemptCount = attemptCount + 1, sendingStartedAt = :startedAt WHERE id = :id AND status IN ('PENDING', 'RETRYING')") suspend fun claimSmsJob(id: Long, startedAt: Long = System.currentTimeMillis()): Int
     @Query("UPDATE SmsJob SET status = :status, lastError = :error, sentAt = :sentAt WHERE id = :id") suspend fun updateSmsJobState(id: Long, status: String, error: String? = null, sentAt: Long? = null)
-    @Query("UPDATE SmsJob SET status = 'RETRYING', lastError = 'Stale job recovered' WHERE status = 'SENDING' AND attemptCount < 3 AND sentAt IS NULL") suspend fun recoverStaleSmsJobs()
-    @Query("UPDATE SmsJob SET status = 'FAILED', lastError = 'Stale job failed (max attempts)' WHERE status = 'SENDING' AND attemptCount >= 3 AND sentAt IS NULL") suspend fun failStaleSmsJobs()
+    @Query("UPDATE SmsJob SET status = 'RETRYING', lastError = 'Stale SMS job recovered' WHERE status = 'SENDING' AND attemptCount < 3 AND sendingStartedAt < :cutoff") suspend fun recoverStaleSmsJobs(cutoff: Long)
+    @Query("UPDATE SmsJob SET status = 'FAILED', lastError = 'Stale SMS job failed (max attempts)' WHERE status = 'SENDING' AND attemptCount >= 3 AND sendingStartedAt < :cutoff") suspend fun failStaleSmsJobs(cutoff: Long)
 
     @Insert suspend fun insertCallJob(job: CallJob)
     @Query("SELECT * FROM CallJob WHERE eventId = :eventId") suspend fun getCallJobsForEvent(eventId: Long): List<CallJob>
