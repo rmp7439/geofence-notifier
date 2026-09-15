@@ -1,16 +1,16 @@
 package com.geofencenotifier.ui.settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.*
 import com.geofencenotifier.data.db.AppDao
-import com.geofencenotifier.core.model.AppSettings
 import kotlinx.coroutines.launch
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 
 @Composable
 fun SettingsScreen(dao: AppDao, onBack: () -> Unit) {
-    val settings by dao.getSettings().collectAsState(initial = null)
+    val settingsFlow = dao.getSettings().collectAsState(initial = null)
+    val settings = settingsFlow.value
     val scope = rememberCoroutineScope()
     
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -18,25 +18,47 @@ fun SettingsScreen(dao: AppDao, onBack: () -> Unit) {
             Button(onClick = onBack) { Text("Back") }
             Spacer(modifier = Modifier.height(8.dp))
             Text("Settings", style = MaterialTheme.typography.headlineMedium)
-            Spacer(modifier = Modifier.height(16.dp))
             
-            settings?.let { s ->
+            if (settings != null) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text("Pause Automation")
-                    Spacer(modifier = Modifier.weight(1f))
-                    Switch(
-                        checked = s.automationPaused,
-                        onCheckedChange = { scope.launch { dao.insertSettings(s.copy(automationPaused = it)) } }
-                    )
+                    Text("Automation Paused", modifier = Modifier.weight(1f))
+                    Switch(checked = settings.automationPaused, onCheckedChange = { 
+                        scope.launch { dao.insertSettings(settings.copy(automationPaused = it)) } 
+                    })
                 }
-                Text("Global Cooldown (mins): ${s.globalCooldownMinutes}")
-                Text("Default Call Duration (secs): ${s.defaultCallDuration}")
-                Text("Log Retention (days): ${s.logRetentionDays}")
-            } ?: Text("Loading settings...")
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Samsung Battery Guidance:", style = MaterialTheme.typography.titleMedium)
-            Text("To ensure reliable geofence triggers, please set this app to 'Unrestricted' battery usage in Android Settings. Force-stops will kill geofence listeners.")
+                
+                var cooldown by remember { mutableStateOf(settings.globalCooldownMinutes.toString()) }
+                OutlinedTextField(
+                    value = cooldown, 
+                    onValueChange = { cooldown = it; it.toIntOrNull()?.let { v -> scope.launch { dao.insertSettings(settings.copy(globalCooldownMinutes = v)) } } },
+                    label = { Text("Global Cooldown (mins)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                var callDur by remember { mutableStateOf(settings.defaultCallDuration.toString()) }
+                OutlinedTextField(
+                    value = callDur, 
+                    onValueChange = { callDur = it; it.toIntOrNull()?.let { v -> scope.launch { dao.insertSettings(settings.copy(defaultCallDuration = v)) } } },
+                    label = { Text("Default Call Duration (sec)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                var ret by remember { mutableStateOf(settings.logRetentionDays.toString()) }
+                OutlinedTextField(
+                    value = ret, 
+                    onValueChange = { ret = it; it.toIntOrNull()?.let { v -> scope.launch { dao.insertSettings(settings.copy(logRetentionDays = v)) } } },
+                    label = { Text("Log Retention (days)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("System Guidance:", style = MaterialTheme.typography.titleMedium)
+                Text("- Set Battery to 'Unrestricted' for reliable geofencing.", style = MaterialTheme.typography.bodySmall)
+                Text("- Force-stopping this app will kill geofences until reopened.", style = MaterialTheme.typography.bodySmall)
+                Text("- Boot Status: ${settings.lastBootRegistrationResult ?: "None"}", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text("Loading settings...")
+            }
         }
     }
 }

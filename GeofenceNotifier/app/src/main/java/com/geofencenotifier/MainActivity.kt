@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
         }
         
         val permManager = PermissionManager(this)
-        if (!permManager.hasRequiredPermissions()) {
+        if (!permManager.isReady()) {
             val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.SEND_SMS, Manifest.permission.CALL_PHONE)
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 perms.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)

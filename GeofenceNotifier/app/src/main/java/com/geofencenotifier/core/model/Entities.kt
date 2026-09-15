@@ -40,7 +40,8 @@ data class NotificationRule(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val locationId: Long,
     val recipientId: Long,
-    val messageTemplate: String
+    val messageTemplate: String,
+    val enabled: Boolean = true
 )
 
 @Entity(
@@ -53,7 +54,7 @@ data class Event(
     val locationId: Long,
     val transitionType: String,
     val dedupeKey: String,
-    val status: String, // PROCESSING, COMPLETED, FAILED
+    val status: String,
     val detectedAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = null
 )
@@ -71,7 +72,7 @@ data class SmsJob(
     val eventId: Long,
     val recipientId: Long,
     val renderedMessage: String,
-    val status: String, // PENDING, SENDING, SENT, RETRYING, FAILED
+    val status: String,
     val attemptCount: Int = 0,
     val lastError: String? = null,
     val sentAt: Long? = null
@@ -91,7 +92,7 @@ data class CallJob(
     val recipientId: Long,
     val sequenceNumber: Int,
     val durationSeconds: Int = 12,
-    val status: String, // PENDING, DIALING, ENDED, RETRYING, FAILED
+    val status: String,
     val observedTelephonyState: String? = null,
     val attemptCount: Int = 0,
     val lastError: String? = null,

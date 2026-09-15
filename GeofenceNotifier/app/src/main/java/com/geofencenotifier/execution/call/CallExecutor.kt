@@ -5,7 +5,6 @@ import android.net.Uri
 import android.telecom.TelecomManager
 import kotlinx.coroutines.delay
 import com.geofencenotifier.data.db.AppDao
-import android.util.Log
 
 class CallExecutor(private val context: Context, private val dao: AppDao) {
     suspend fun executeFixedDurationCall(jobId: Long, phone: String, durationSeconds: Int): Boolean {
@@ -21,16 +20,20 @@ class CallExecutor(private val context: Context, private val dao: AppDao) {
             try {
                 val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
                 if (context.checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    telecomManager.endCall()
+                    val result = telecomManager.endCall()
+                    if (!result) telecomState = "End call returned false (System restricted)"
                 } else {
-                    telecomState = "End call restricted by permission"
+                    telecomState = "End call restricted by missing permission"
                 }
             } catch (e: Exception) {
-                telecomState = "End call failed: ${e.message}"
+                telecomState = "End call Exception: ${e.message}"
             }
             
             dao.updateCallJobState(jobId, "ENDED", endedAt = System.currentTimeMillis(), state = telecomState)
             true
+        } catch (e: SecurityException) {
+            dao.updateCallJobState(jobId, "FAILED", error = "Missing CALL_PHONE permission")
+            false
         } catch (e: Exception) {
             dao.updateCallJobState(jobId, "RETRYING", error = e.message ?: "Unknown Call Error")
             false

@@ -63,8 +63,20 @@ class GeofenceRegistrar(private val context: Context, private val dao: AppDao) {
         }
     }
     
-    suspend fun registerAllActiveGeofences() {
+    suspend fun registerAllActiveGeofences(): String {
         val activeLocations = dao.getActiveLocationsSync()
-        activeLocations.forEach { registerGeofence(it.id) }
+        if (activeLocations.isEmpty()) return "NO_ACTIVE_LOCATIONS"
+        
+        var successCount = 0
+        activeLocations.forEach { 
+            val res = registerGeofence(it.id)
+            if (res) successCount++
+        }
+        
+        return when {
+            successCount == activeLocations.size -> "SUCCESS"
+            successCount > 0 -> "PARTIAL_FAILURE"
+            else -> "FAILURE"
+        }
     }
 }

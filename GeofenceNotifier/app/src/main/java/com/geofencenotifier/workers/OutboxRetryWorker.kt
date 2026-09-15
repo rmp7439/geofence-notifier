@@ -9,10 +9,11 @@ import com.geofencenotifier.execution.call.CallExecutor
 class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val dao = AppDatabase.getInstance(applicationContext).dao()
-        val smsSender = SmsSender(dao)
+        val smsSender = SmsSender(dao, applicationContext)
         val callExecutor = CallExecutor(applicationContext, dao)
         
         var requiresRetry = false
+        var hasPendingWork = false
         
         // SMS Execution
         val pendingSms = dao.getPendingSmsJobsSync()
@@ -21,9 +22,11 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
                 dao.updateSmsJobState(job.id, "FAILED", error = "Max retries exceeded")
                 continue
             }
-            // Atomic claim
             val claimed = dao.claimSmsJob(job.id)
-            if (claimed == 0) continue // Another worker grabbed it
+            if (claimed == 0) {
+                hasPendingWork = true
+                continue
+            }
             
             val rec = dao.getRecipientSync(job.recipientId)
             if (rec != null) {
@@ -34,7 +37,7 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
             }
         }
         
-        // Call Execution (Sequenced per Event)
+        // Call Execution
         val pendingCalls = dao.getPendingCallJobsSync()
         val eventsToCalls = pendingCalls.groupBy { it.eventId }
         
@@ -43,19 +46,28 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
             
             if (callToExecute.attemptCount >= 3) {
                 dao.updateCallJobState(callToExecute.id, "FAILED", error = "Max retries exceeded")
-                // A failure here means the sequence breaks or continues. We mark it FAILED and next time sequence 2 runs.
+                // Continuing to next sequence since this one is terminal
+                hasPendingWork = true // Next sequence will be picked up on next run
                 continue
             }
             
             val claimed = dao.claimCallJob(callToExecute.id)
-            if (claimed == 0) continue
+            if (claimed == 0) {
+                hasPendingWork = true
+                continue
+            }
             
             val rec = dao.getRecipientSync(callToExecute.recipientId)
             if (rec != null) {
                 val success = callExecutor.executeFixedDurationCall(callToExecute.id, rec.phoneNumber, callToExecute.durationSeconds)
-                if (!success) requiresRetry = true
+                if (!success) {
+                    requiresRetry = true
+                } else if (calls.size > 1) {
+                    hasPendingWork = true // More calls in sequence
+                }
             } else {
                 dao.updateCallJobState(callToExecute.id, "FAILED", error = "Recipient missing")
+                hasPendingWork = true // Process next sequence
             }
         }
         
@@ -64,13 +76,17 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
         for (evt in processingEvents) {
             val sms = dao.getSmsJobsForEvent(evt.id)
             val calls = dao.getCallJobsForEvent(evt.id)
-            val allSmsDone = sms.all { it.status == "SENT" || it.status == "FAILED" }
-            val allCallsDone = calls.all { it.status == "ENDED" || it.status == "FAILED" }
+            val allSmsTerminal = sms.all { it.status == "SENT" || it.status == "FAILED" }
+            val allCallsTerminal = calls.all { it.status == "ENDED" || it.status == "FAILED" }
             
-            if (allSmsDone && allCallsDone) {
+            if (allSmsTerminal && allCallsTerminal) {
                 val hasFailures = sms.any { it.status == "FAILED" } || calls.any { it.status == "FAILED" }
-                val terminalState = if (hasFailures && sms.all { it.status == "FAILED" } && calls.all { it.status == "FAILED" }) "FAILED" else "COMPLETED"
+                val allFailed = (sms.isNotEmpty() || calls.isNotEmpty()) && sms.all { it.status == "FAILED" } && calls.all { it.status == "FAILED" }
+                
+                val terminalState = if (allFailed) "FAILED" else "COMPLETED"
                 dao.updateEventStatus(evt.id, terminalState, System.currentTimeMillis())
+            } else if (sms.isEmpty() && calls.isEmpty()) {
+                dao.updateEventStatus(evt.id, "COMPLETED", System.currentTimeMillis())
             }
         }
         
@@ -81,6 +97,6 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
             dao.deleteOldEvents(cutoff)
         }
         
-        return if (requiresRetry) Result.retry() else Result.success()
+        return if (requiresRetry) Result.retry() else if (hasPendingWork) Result.retry() else Result.success()
     }
 }

@@ -3,28 +3,38 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.core.content.ContextCompat
 
 class PermissionManager(private val context: Context) {
-    fun hasPermission(permission: String): Boolean {
-        return context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
-    }
-
-    fun hasRequiredPermissions(): Boolean {
-        val permissions = mutableListOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.CALL_PHONE
-        )
+    fun hasForegroundLocation(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        
+    fun hasBackgroundLocation(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            permissions.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
+        } else {
+            hasForegroundLocation()
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-        }
+        
+    fun hasSms(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+        
+    fun hasCall(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+        
+    fun hasAnswerCall(): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            permissions.add(Manifest.permission.ANSWER_PHONE_CALLS)
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
         }
-        return permissions.all { hasPermission(it) }
-    }
+        
+    fun hasNotifications(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+        
+    fun isReady(): Boolean = hasForegroundLocation() && hasBackgroundLocation() && hasSms() && hasCall() && hasAnswerCall() && hasNotifications()
 }

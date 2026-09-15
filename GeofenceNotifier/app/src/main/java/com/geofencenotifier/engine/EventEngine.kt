@@ -50,7 +50,7 @@ class EventEngine(private val context: Context, private val dao: AppDao) {
         val dedupeKey = "${locationId}_${transition}_$timeWindow"
         
         val event = Event(locationId = locationId, transitionType = transition, dedupeKey = dedupeKey, status = "PROCESSING")
-        val rules = dao.getRulesByLocationIdSync(locationId)
+        val rules = dao.getRulesByLocationIdSync(locationId).filter { it.enabled }
         
         val smsJobs = mutableListOf<SmsJob>()
         val callJobs = mutableListOf<CallJob>()
@@ -75,7 +75,6 @@ class EventEngine(private val context: Context, private val dao: AppDao) {
             }
         }
         
-        // If event creation fails due to IGNORE conflict on dedupeKey, it returns -1
         val eventId = dao.insertEventWithJobs(event, smsJobs, callJobs)
         if (eventId != -1L) {
             val req = OneTimeWorkRequestBuilder<OutboxRetryWorker>()

@@ -34,13 +34,16 @@ fun RulesScreen(dao: AppDao, onBack: () -> Unit) {
                     val lName = locs.find { it.id == rule.locationId }?.name ?: "Unknown Loc"
                     val rName = recs.find { it.id == rule.recipientId }?.name ?: "Unknown Recipient"
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Row(modifier = Modifier.padding(8.dp)) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("When: ${lName} -> Notify: ${rName}")
-                                Text(rule.messageTemplate, style = MaterialTheme.typography.bodySmall)
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Row {
+                                Text("When: $lName -> Notify: $rName", modifier = Modifier.weight(1f))
+                                Switch(checked = rule.enabled, onCheckedChange = { 
+                                    scope.launch { dao.updateRule(rule.copy(enabled = it)) } 
+                                })
                             }
-                            IconButton(onClick = { scope.launch { dao.deleteRule(rule) } }) {
-                                Text("Del")
+                            Text(rule.messageTemplate, style = MaterialTheme.typography.bodySmall)
+                            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                IconButton(onClick = { scope.launch { dao.deleteRule(rule) } }) { Text("Del") }
                             }
                         }
                     }
@@ -88,7 +91,7 @@ fun RulesScreen(dao: AppDao, onBack: () -> Unit) {
                 Button(onClick = {
                     if (selectedLoc != null && selectedRec != null && msg.isNotBlank()) {
                         scope.launch {
-                            dao.insertRule(NotificationRule(locationId = selectedLoc!!, recipientId = selectedRec!!, messageTemplate = msg))
+                            dao.insertRule(NotificationRule(locationId = selectedLoc!!, recipientId = selectedRec!!, messageTemplate = msg, enabled = true))
                             showDialog = false
                         }
                     }

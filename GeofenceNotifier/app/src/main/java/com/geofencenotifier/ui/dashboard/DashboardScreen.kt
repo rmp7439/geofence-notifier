@@ -1,56 +1,52 @@
 package com.geofencenotifier.ui.dashboard
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.*
+import com.geofencenotifier.data.db.AppDao
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.*
-import androidx.lifecycle.ViewModel
-import kotlinx.coroutines.flow.Flow
-import com.geofencenotifier.core.model.*
-import com.geofencenotifier.data.db.AppDao
-
-class DashboardViewModel(private val dao: AppDao) : ViewModel() {
-    val settings: Flow<AppSettings?> = dao.getSettings()
-    val locations = dao.getLocations()
-    val recipients = dao.getRecipients()
-    val rules = dao.getRules()
-    val events = dao.getEvents()
-}
 
 @Composable
 fun DashboardScreen(dao: AppDao, onNavigate: (String) -> Unit) {
-    val viewModel = remember { DashboardViewModel(dao) }
-    val settings by viewModel.settings.collectAsState(initial = null)
-    val locs by viewModel.locations.collectAsState(initial = emptyList())
-    val recps by viewModel.recipients.collectAsState(initial = emptyList())
-    val rules by viewModel.rules.collectAsState(initial = emptyList())
-    val evts by viewModel.events.collectAsState(initial = emptyList())
+    val locs by dao.getLocations().collectAsState(initial = emptyList())
+    val recs by dao.getRecipients().collectAsState(initial = emptyList())
+    val rules by dao.getRules().collectAsState(initial = emptyList())
+    val settings by dao.getSettings().collectAsState(initial = null)
     
     val activeLocs = locs.count { it.active }
-    val paused = settings?.automationPaused ?: false
     
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Dashboard", style = MaterialTheme.typography.headlineMedium)
+            Text("Geofence Notifier", style = MaterialTheme.typography.headlineMedium)
             Spacer(modifier = Modifier.height(16.dp))
+            
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("System Status", style = MaterialTheme.typography.titleMedium)
-                    Text(if (paused) "AUTOMATION PAUSED" else "AUTOMATION RUNNING")
+                    Text("System Readiness", style = MaterialTheme.typography.titleMedium)
+                    if (settings?.automationPaused == true) {
+                        Text("AUTOMATION PAUSED", color = MaterialTheme.colorScheme.error)
+                    } else {
+                        Text("AUTOMATION RUNNING", color = MaterialTheme.colorScheme.primary)
+                    }
                     Text("Active Locations: $activeLocs / ${locs.size}")
-                    Text("Recipients: ${recps.size}")
-                    Text("Rules: ${rules.size}")
-                    Text("Total Events: ${evts.size}")
-                    Text("Boot Status: ${settings?.lastBootRegistrationResult ?: "N/A"}")
+                    Text("Recipients: ${recs.size}")
+                    Text("Active Rules: ${rules.count { it.enabled }} / ${rules.size}")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Boot Status: ${settings?.lastBootRegistrationResult ?: "Not yet run"}", style = MaterialTheme.typography.bodySmall)
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { onNavigate("settings") }) { Text("Settings") }
-            Button(onClick = { onNavigate("locations") }) { Text("Locations") }
-            Button(onClick = { onNavigate("recipients") }) { Text("Recipients") }
-            Button(onClick = { onNavigate("rules") }) { Text("Rules") }
-            Button(onClick = { onNavigate("history") }) { Text("History") }
-            Button(onClick = { onNavigate("testmode") }) { Text("Test Mode") }
+            Button(onClick = { onNavigate("locations") }, modifier = Modifier.fillMaxWidth()) { Text("Locations") }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = { onNavigate("recipients") }, modifier = Modifier.fillMaxWidth()) { Text("Recipients") }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = { onNavigate("rules") }, modifier = Modifier.fillMaxWidth()) { Text("Rules") }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = { onNavigate("history") }, modifier = Modifier.fillMaxWidth()) { Text("History") }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = { onNavigate("settings") }, modifier = Modifier.fillMaxWidth()) { Text("Settings") }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = { onNavigate("testmode") }, modifier = Modifier.fillMaxWidth()) { Text("Safe Test Mode") }
         }
     }
 }
