@@ -15,6 +15,15 @@ fun DashboardScreen(dao: AppDao, permManager: PermissionManager, onNavigate: (St
     val settings by dao.getSettings().collectAsState(initial = null)
     
     val activeLocs = locs.count { it.active }
+    val registeredLocs = locs.count { it.registrationState == "REGISTERED" }
+    val enabledRules = rules.count { it.enabled }
+    
+    val isReady = permManager.isReady() && 
+                  settings?.automationPaused != true && 
+                  activeLocs > 0 && 
+                  registeredLocs == activeLocs &&
+                  enabledRules > 0 &&
+                  recs.isNotEmpty()
     
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -25,17 +34,21 @@ fun DashboardScreen(dao: AppDao, permManager: PermissionManager, onNavigate: (St
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("System Readiness", style = MaterialTheme.typography.titleMedium)
                     
-                    if (settings?.automationPaused == true) {
-                        Text("AUTOMATION PAUSED", color = MaterialTheme.colorScheme.error)
-                    } else if (!permManager.isReady()) {
-                        Text("MISSING PERMISSIONS", color = MaterialTheme.colorScheme.error)
+                    if (isReady) {
+                        Text("READY & RUNNING", color = MaterialTheme.colorScheme.primary)
                     } else {
-                        Text("AUTOMATION RUNNING", color = MaterialTheme.colorScheme.primary)
+                        Text("NOT READY", color = MaterialTheme.colorScheme.error)
+                        if (!permManager.isReady()) Text("- MISSING PERMISSIONS", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        if (settings?.automationPaused == true) Text("- AUTOMATION PAUSED", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        if (activeLocs == 0) Text("- NO ACTIVE LOCATIONS", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        if (registeredLocs < activeLocs) Text("- GEOFENCE REGISTRATION FAILED", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        if (enabledRules == 0) Text("- NO ENABLED RULES", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        if (recs.isEmpty()) Text("- NO RECIPIENTS", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
                     
                     Text("Active Locations: $activeLocs / ${locs.size}")
                     Text("Recipients: ${recs.size}")
-                    Text("Active Rules: ${rules.count { it.enabled }} / ${rules.size}")
+                    Text("Active Rules: $enabledRules / ${rules.size}")
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Boot Status: ${settings?.lastBootRegistrationResult ?: "Not yet run"}", style = MaterialTheme.typography.bodySmall)
                 }

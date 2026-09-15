@@ -10,6 +10,7 @@ data class Location(
     val radiusMeters: Float = 150f,
     val triggerType: String = "BOTH",
     val active: Boolean = true,
+    val registrationState: String = "NOT_REGISTERED",
     val cooldownMinutes: Int = 10,
     val activeHoursStart: String? = null,
     val activeHoursEnd: String? = null,

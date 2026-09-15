@@ -20,9 +20,13 @@ fun LocationsScreen(dao: AppDao, onBack: () -> Unit) {
     var editingLoc by remember { mutableStateOf<Location?>(null) }
     var showAdd by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
     
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        modifier = Modifier.fillMaxSize()
+    ) { innerPadding ->
+        Column(modifier = Modifier.padding(innerPadding).padding(16.dp)) {
             Row {
                 Button(onClick = onBack) { Text("Back") }
                 Spacer(modifier = Modifier.weight(1f))
@@ -44,12 +48,21 @@ fun LocationsScreen(dao: AppDao, onBack: () -> Unit) {
                                     if (loc.activeHoursStart != null && loc.activeHoursEnd != null) {
                                         Text("Active: ${loc.activeHoursStart} to ${loc.activeHoursEnd}", style = MaterialTheme.typography.bodySmall)
                                     }
+                                    Text("State: ${loc.registrationState}", color = if (loc.registrationState == "REGISTRATION_FAILED") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
                                 }
                                 Switch(checked = loc.active, onCheckedChange = { active ->
                                     scope.launch { 
-                                        dao.updateLocation(loc.copy(active = active))
                                         val reg = GeofenceRegistrar(context, dao)
-                                        if (active) reg.registerGeofence(loc.id) else reg.unregisterGeofence(loc.id)
+                                        if (active) {
+                                            dao.updateLocation(loc.copy(active = true))
+                                            val success = reg.registerGeofence(loc.id)
+                                            val finalState = if (success) "REGISTERED" else "REGISTRATION_FAILED"
+                                            dao.updateLocation(loc.copy(active = true, registrationState = finalState))
+                                            if (!success) snackbarHostState.showSnackbar("Failed to register geofence for ${loc.name}")
+                                        } else {
+                                            reg.unregisterGeofence(loc.id)
+                                            dao.updateLocation(loc.copy(active = false, registrationState = "NOT_REGISTERED"))
+                                        }
                                     }
                                 })
                             }
@@ -67,100 +80,122 @@ fun LocationsScreen(dao: AppDao, onBack: () -> Unit) {
                 }
             }
         }
-    }
-    
-    val currentEditor = editingLoc
-    if (showAdd || currentEditor != null) {
-        var name by remember { mutableStateOf(currentEditor?.name ?: "") }
-        var latStr by remember { mutableStateOf((currentEditor?.latitude ?: "").toString()) }
-        var lngStr by remember { mutableStateOf((currentEditor?.longitude ?: "").toString()) }
-        var radStr by remember { mutableStateOf((currentEditor?.radiusMeters ?: 150f).toString()) }
-        var trigger by remember { mutableStateOf(currentEditor?.triggerType ?: "BOTH") }
-        var cooldown by remember { mutableStateOf((currentEditor?.cooldownMinutes ?: 10).toString()) }
-        var startHr by remember { mutableStateOf(currentEditor?.activeHoursStart ?: "") }
-        var endHr by remember { mutableStateOf(currentEditor?.activeHoursEnd ?: "") }
-        var error by remember { mutableStateOf("") }
-        var expandedTrigger by remember { mutableStateOf(false) }
         
-        AlertDialog(
-            onDismissRequest = { showAdd = false; editingLoc = null },
-            title = { Text(if (currentEditor == null) "Add Location" else "Edit Location") },
-            text = {
-                Column {
-                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
-                    Row {
-                        OutlinedTextField(value = latStr, onValueChange = { latStr = it }, label = { Text("Lat") }, modifier = Modifier.weight(1f))
-                        Spacer(Modifier.width(8.dp))
-                        OutlinedTextField(value = lngStr, onValueChange = { lngStr = it }, label = { Text("Lng") }, modifier = Modifier.weight(1f))
-                    }
-                    OutlinedTextField(value = radStr, onValueChange = { radStr = it }, label = { Text("Radius (m)") })
-                    OutlinedTextField(value = cooldown, onValueChange = { cooldown = it }, label = { Text("Cooldown (mins)") })
-                    
-                    ExposedDropdownMenuBox(expanded = expandedTrigger, onExpandedChange = { expandedTrigger = !expandedTrigger }) {
-                        OutlinedTextField(value = trigger, onValueChange = {}, readOnly = true, modifier = Modifier.menuAnchor(), label = { Text("Trigger Type") })
-                        ExposedDropdownMenu(expanded = expandedTrigger, onDismissRequest = { expandedTrigger = false }) {
-                            listOf("BOTH", "ENTER", "EXIT").forEach { t ->
-                                DropdownMenuItem(text = { Text(t) }, onClick = { trigger = t; expandedTrigger = false })
+        val currentEditor = editingLoc
+        if (showAdd || currentEditor != null) {
+            var name by remember { mutableStateOf(currentEditor?.name ?: "") }
+            var latStr by remember { mutableStateOf((currentEditor?.latitude ?: "").toString()) }
+            var lngStr by remember { mutableStateOf((currentEditor?.longitude ?: "").toString()) }
+            var radStr by remember { mutableStateOf((currentEditor?.radiusMeters ?: 150f).toString()) }
+            var trigger by remember { mutableStateOf(currentEditor?.triggerType ?: "BOTH") }
+            var cooldown by remember { mutableStateOf((currentEditor?.cooldownMinutes ?: 10).toString()) }
+            var startHr by remember { mutableStateOf(currentEditor?.activeHoursStart ?: "") }
+            var endHr by remember { mutableStateOf(currentEditor?.activeHoursEnd ?: "") }
+            var error by remember { mutableStateOf("") }
+            var expandedTrigger by remember { mutableStateOf(false) }
+            
+            AlertDialog(
+                onDismissRequest = { showAdd = false; editingLoc = null },
+                title = { Text(if (currentEditor == null) "Add Location" else "Edit Location") },
+                text = {
+                    Column {
+                        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
+                        Row {
+                            OutlinedTextField(value = latStr, onValueChange = { latStr = it }, label = { Text("Lat") }, modifier = Modifier.weight(1f))
+                            Spacer(Modifier.width(8.dp))
+                            OutlinedTextField(value = lngStr, onValueChange = { lngStr = it }, label = { Text("Lng") }, modifier = Modifier.weight(1f))
+                        }
+                        OutlinedTextField(value = radStr, onValueChange = { radStr = it }, label = { Text("Radius (m)") })
+                        OutlinedTextField(value = cooldown, onValueChange = { cooldown = it }, label = { Text("Cooldown (mins)") })
+                        
+                        ExposedDropdownMenuBox(expanded = expandedTrigger, onExpandedChange = { expandedTrigger = !expandedTrigger }) {
+                            OutlinedTextField(value = trigger, onValueChange = {}, readOnly = true, modifier = Modifier.menuAnchor(), label = { Text("Trigger Type") })
+                            ExposedDropdownMenu(expanded = expandedTrigger, onDismissRequest = { expandedTrigger = false }) {
+                                listOf("BOTH", "ENTER", "EXIT").forEach { t ->
+                                    DropdownMenuItem(text = { Text(t) }, onClick = { trigger = t; expandedTrigger = false })
+                                }
                             }
                         }
-                    }
-                    
-                    Text("Active Hours (HH:MM) Optional:", style = MaterialTheme.typography.labelSmall)
-                    Row {
-                        OutlinedTextField(value = startHr, onValueChange = { startHr = it }, label = { Text("Start") }, modifier = Modifier.weight(1f))
-                        Spacer(Modifier.width(8.dp))
-                        OutlinedTextField(value = endHr, onValueChange = { endHr = it }, label = { Text("End") }, modifier = Modifier.weight(1f))
-                    }
-                    
-                    if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    val lat = latStr.toDoubleOrNull()
-                    val lng = lngStr.toDoubleOrNull()
-                    val rad = radStr.toFloatOrNull()
-                    val cd = cooldown.toIntOrNull()
-                    
-                    val hrRegex = Regex("^([01]\\d|2[0-3]):([0-5]\\d)$")
-                    val sHrValid = startHr.isBlank() || hrRegex.matches(startHr)
-                    val eHrValid = endHr.isBlank() || hrRegex.matches(endHr)
-                    val bothHr = (startHr.isNotBlank() && endHr.isNotBlank()) || (startHr.isBlank() && endHr.isBlank())
-                    
-                    if (name.isBlank() || lat == null || lng == null || rad == null || cd == null || rad < 100f || lat !in -90.0..90.0 || lng !in -180.0..180.0 || cd < 0) {
-                        error = "Invalid basic config. Rad >= 100. CD >= 0."
-                    } else if (!sHrValid || !eHrValid || !bothHr) {
-                        error = "Active hours must be HH:MM or both blank."
-                    } else {
-                        val finalLoc = Location(
-                            id = currentEditor?.id ?: 0,
-                            name = name,
-                            latitude = lat,
-                            longitude = lng,
-                            radiusMeters = rad,
-                            triggerType = trigger,
-                            active = currentEditor?.active ?: true,
-                            cooldownMinutes = cd,
-                            activeHoursStart = startHr.takeIf { it.isNotBlank() },
-                            activeHoursEnd = endHr.takeIf { it.isNotBlank() }
-                        )
-                        scope.launch {
-                            val reg = GeofenceRegistrar(context, dao)
-                            if (currentEditor != null) {
-                                reg.unregisterGeofence(currentEditor.id)
-                                dao.updateLocation(finalLoc)
-                                if (finalLoc.active) reg.registerGeofence(finalLoc.id)
-                            } else {
-                                val id = dao.insertLocation(finalLoc)
-                                if (finalLoc.active) reg.registerGeofence(id)
-                            }
-                            showAdd = false
-                            editingLoc = null
+                        
+                        Text("Active Hours (HH:MM) Optional:", style = MaterialTheme.typography.labelSmall)
+                        Row {
+                            OutlinedTextField(value = startHr, onValueChange = { startHr = it }, label = { Text("Start") }, modifier = Modifier.weight(1f))
+                            Spacer(Modifier.width(8.dp))
+                            OutlinedTextField(value = endHr, onValueChange = { endHr = it }, label = { Text("End") }, modifier = Modifier.weight(1f))
                         }
+                        
+                        if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
                     }
-                }) { Text("Save") }
-            },
-            dismissButton = { Button(onClick = { showAdd = false; editingLoc = null }) { Text("Cancel") } }
-        )
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        val lat = latStr.toDoubleOrNull()
+                        val lng = lngStr.toDoubleOrNull()
+                        val rad = radStr.toFloatOrNull()
+                        val cd = cooldown.toIntOrNull()
+                        
+                        val hrRegex = Regex("^([01]\\d|2[0-3]):([0-5]\\d)$")
+                        val sHrValid = startHr.isBlank() || hrRegex.matches(startHr)
+                        val eHrValid = endHr.isBlank() || hrRegex.matches(endHr)
+                        val bothHr = (startHr.isNotBlank() && endHr.isNotBlank()) || (startHr.isBlank() && endHr.isBlank())
+                        
+                        if (name.isBlank() || lat == null || lng == null || rad == null || cd == null || rad < 100f || lat !in -90.0..90.0 || lng !in -180.0..180.0 || cd < 0) {
+                            error = "Invalid basic config. Rad >= 100. CD >= 0."
+                        } else if (!sHrValid || !eHrValid || !bothHr) {
+                            error = "Active hours must be HH:MM or both blank."
+                        } else {
+                            scope.launch {
+                                val reg = GeofenceRegistrar(context, dao)
+                                if (currentEditor != null) {
+                                    reg.unregisterGeofence(currentEditor.id)
+                                    val finalLoc = Location(
+                                        id = currentEditor.id,
+                                        name = name,
+                                        latitude = lat,
+                                        longitude = lng,
+                                        radiusMeters = rad,
+                                        triggerType = trigger,
+                                        active = currentEditor.active,
+                                        cooldownMinutes = cd,
+                                        activeHoursStart = startHr.takeIf { it.isNotBlank() },
+                                        activeHoursEnd = endHr.takeIf { it.isNotBlank() },
+                                        registrationState = "NOT_REGISTERED"
+                                    )
+                                    dao.updateLocation(finalLoc)
+                                    if (finalLoc.active) {
+                                        val success = reg.registerGeofence(finalLoc.id)
+                                        val finalState = if (success) "REGISTERED" else "REGISTRATION_FAILED"
+                                        dao.updateLocation(finalLoc.copy(registrationState = finalState))
+                                        if (!success) snackbarHostState.showSnackbar("Failed to re-register geofence for ${finalLoc.name}")
+                                    }
+                                } else {
+                                    val initialLoc = Location(
+                                        id = 0,
+                                        name = name,
+                                        latitude = lat,
+                                        longitude = lng,
+                                        radiusMeters = rad,
+                                        triggerType = trigger,
+                                        active = true,
+                                        cooldownMinutes = cd,
+                                        activeHoursStart = startHr.takeIf { it.isNotBlank() },
+                                        activeHoursEnd = endHr.takeIf { it.isNotBlank() },
+                                        registrationState = "NOT_REGISTERED"
+                                    )
+                                    val id = dao.insertLocation(initialLoc)
+                                    val success = reg.registerGeofence(id)
+                                    val finalState = if (success) "REGISTERED" else "REGISTRATION_FAILED"
+                                    dao.updateLocation(initialLoc.copy(id = id, registrationState = finalState))
+                                    if (!success) snackbarHostState.showSnackbar("Failed to register geofence for ${initialLoc.name}")
+                                }
+                                showAdd = false
+                                editingLoc = null
+                            }
+                        }
+                    }) { Text("Save") }
+                },
+                dismissButton = { Button(onClick = { showAdd = false; editingLoc = null }) { Text("Cancel") } }
+            )
+        }
     }
 }

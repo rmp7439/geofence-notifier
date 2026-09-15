@@ -18,12 +18,14 @@ import androidx.compose.ui.platform.LocalContext
 @Composable
 fun TestModeScreen(dao: AppDao, onBack: () -> Unit) {
     val locs by dao.getLocations().collectAsState(initial = emptyList())
+    val recs by dao.getRecipients().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var selectedLoc by remember { mutableStateOf<Long?>(null) }
     var expanded by remember { mutableStateOf(false) }
     var resultText by remember { mutableStateOf("") }
     var realSmsPhone by remember { mutableStateOf("") }
+    var smsError by remember { mutableStateOf("") }
     
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -72,12 +74,25 @@ fun TestModeScreen(dao: AppDao, onBack: () -> Unit) {
             Text("DANGEROUS: REAL SMS TEST", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
             Text("Requires explicit user action. Uses isolated test recipient. NEVER triggers calls.", style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(value = realSmsPhone, onValueChange = { realSmsPhone = it }, label = { Text("Test Phone Number") })
+            if (smsError.isNotBlank()) Text(smsError, color = MaterialTheme.colorScheme.error)
             
             Button(
                 onClick = {
-                    if (realSmsPhone.isNotBlank() && selectedLoc != null) {
+                    val phoneRegex = Regex("^[\\+]?[(]?[0-9]{3}[)]?[-\\s\\.]?[0-9]{3}[-\\s\\.]?[0-9]{4,6}$")
+                    if (realSmsPhone.isBlank() || !phoneRegex.matches(realSmsPhone)) {
+                        smsError = "Invalid phone number format."
+                    } else if (selectedLoc == null) {
+                        smsError = "Select a location first."
+                    } else {
+                        smsError = ""
                         scope.launch {
-                            val recId = dao.insertRecipient(Recipient(name = "TEST_SMS_RECIPIENT", phoneNumber = realSmsPhone, smsEnabled = true, callEnabled = false))
+                            var recId = recs.find { it.name == "TEST_SMS_RECIPIENT" }?.id
+                            if (recId == null) {
+                                recId = dao.insertRecipient(Recipient(name = "TEST_SMS_RECIPIENT", phoneNumber = realSmsPhone, smsEnabled = true, callEnabled = false))
+                            } else {
+                                dao.updateRecipient(Recipient(id = recId, name = "TEST_SMS_RECIPIENT", phoneNumber = realSmsPhone, smsEnabled = true, callEnabled = false))
+                            }
+                            
                             val dedupeKey = "TEST_REAL_SMS_${System.currentTimeMillis()}"
                             val event = Event(locationId = selectedLoc!!, transitionType = "TEST", dedupeKey = dedupeKey, status = "PROCESSING")
                             val smsJobs = listOf(SmsJob(eventId = 0, recipientId = recId, renderedMessage = "Test message from Geofence Notifier", status = "PENDING"))
@@ -88,13 +103,13 @@ fun TestModeScreen(dao: AppDao, onBack: () -> Unit) {
                                     .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
                                     .build()
                                 WorkManager.getInstance(context).enqueue(req)
-                                resultText = "REAL SMS Queued."
+                                resultText = "REAL SMS Queued to $realSmsPhone."
                             }
                         }
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) { Text("Send REAL SMS to this number") }
+            ) { Text("Send REAL SMS") }
             
             Spacer(modifier = Modifier.height(16.dp))
             if (resultText.isNotBlank()) {

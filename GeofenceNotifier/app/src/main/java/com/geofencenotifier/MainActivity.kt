@@ -2,6 +2,9 @@ package com.geofencenotifier
 import android.os.Bundle
 import android.Manifest
 import android.os.Build
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.*
@@ -18,11 +21,10 @@ import com.geofencenotifier.ui.settings.SettingsScreen
 import com.geofencenotifier.ui.testmode.TestModeScreen
 import com.geofencenotifier.data.db.AppDatabase
 import com.geofencenotifier.permissions.PermissionManager
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,6 +57,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun PermissionRequestScreen(manager: PermissionManager, onCheck: () -> Unit) {
+    val context = LocalContext.current
     var step by remember { mutableStateOf(0) }
     
     val baseLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -94,8 +97,17 @@ fun PermissionRequestScreen(manager: PermissionManager, onCheck: () -> Unit) {
                     }
                 }) { Text("Request Background Location") }
             } else {
-                Text("All required permissions seem granted or you denied permanently. Go to app settings if it's stuck.")
-                Button(onClick = onCheck) { Text("Re-Check") }
+                Text("Permissions appear permanently denied or restricted.", color = MaterialTheme.colorScheme.error)
+                Text("Please open Android Settings, go to Permissions, and allow Location (All the time), SMS, and Phone.", style = MaterialTheme.typography.bodySmall)
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                    }
+                    context.startActivity(intent)
+                }) { Text("Open App Settings") }
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(onClick = onCheck) { Text("Re-Check Status") }
             }
         }
     }

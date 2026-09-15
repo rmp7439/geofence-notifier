@@ -44,6 +44,7 @@ interface AppDao {
     @Insert suspend fun insertCallJob(job: CallJob)
     @Query("SELECT * FROM CallJob WHERE eventId = :eventId") suspend fun getCallJobsForEvent(eventId: Long): List<CallJob>
     @Query("SELECT * FROM CallJob WHERE status IN ('PENDING', 'RETRYING') ORDER BY sequenceNumber ASC") suspend fun getPendingCallJobsSync(): List<CallJob>
+    @Query("SELECT * FROM CallJob WHERE status IN ('PENDING', 'RETRYING', 'DIALING') ORDER BY sequenceNumber ASC") suspend fun getAllIncompleteCallJobsSync(): List<CallJob>
     
     @Query("UPDATE CallJob SET status = 'DIALING', attemptCount = attemptCount + 1, startedAt = :startedAt WHERE id = :id AND status IN ('PENDING', 'RETRYING')") suspend fun claimCallJob(id: Long, startedAt: Long = System.currentTimeMillis()): Int
     @Query("UPDATE CallJob SET status = :status, lastError = :error, endedAt = :endedAt, observedTelephonyState = :state WHERE id = :id") suspend fun updateCallJobState(id: Long, status: String, error: String? = null, endedAt: Long? = null, state: String? = null)

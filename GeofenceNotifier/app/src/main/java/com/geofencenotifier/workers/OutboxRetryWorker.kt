@@ -2,10 +2,11 @@ package com.geofencenotifier.workers
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.geofencenotifier.data.db.AppDao
 import com.geofencenotifier.data.db.AppDatabase
 import com.geofencenotifier.execution.sms.SmsSender
 import com.geofencenotifier.execution.call.CallExecutor
-import kotlinx.coroutines.delay
+import com.geofencenotifier.execution.call.CallResult
 
 class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
@@ -47,11 +48,18 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
         }
         
         // Call Execution (Strict sequencing)
-        val pendingCalls = dao.getPendingCallJobsSync()
-        val eventsToCalls = pendingCalls.groupBy { it.eventId }
+        val allCalls = dao.getAllIncompleteCallJobsSync()
+        val eventsToCalls = allCalls.groupBy { it.eventId }
         
         for ((_, calls) in eventsToCalls) {
-            val callToExecute = calls.minByOrNull { it.sequenceNumber } ?: continue
+            val sortedCalls = calls.sortedBy { it.sequenceNumber }
+            val activeCall = sortedCalls.firstOrNull { it.status == "DIALING" }
+            if (activeCall != null) {
+                hasPendingWork = true
+                continue
+            }
+            
+            val callToExecute = sortedCalls.firstOrNull { it.status == "PENDING" || it.status == "RETRYING" } ?: continue
             
             if (callToExecute.attemptCount >= 3) {
                 dao.updateCallJobState(callToExecute.id, "FAILED", error = "Max retries exceeded")
@@ -67,11 +75,14 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
             
             val rec = dao.getRecipientSync(callToExecute.recipientId)
             if (rec != null) {
-                val success = callExecutor.executeFixedDurationCall(callToExecute.id, rec.phoneNumber, callToExecute.durationSeconds)
-                if (!success) {
-                    requiresRetry = true
-                } else if (calls.size > 1) {
-                    hasPendingWork = true
+                val result = callExecutor.executeFixedDurationCall(callToExecute.id, rec.phoneNumber, callToExecute.durationSeconds)
+                when (result) {
+                    CallResult.SUCCESS, CallResult.TERMINATION_FAILED, CallResult.TERMINATION_RESTRICTED, CallResult.INITIATION_FAILED -> {
+                        if (calls.size > 1) hasPendingWork = true
+                    }
+                    CallResult.RETRYABLE_FAILURE -> {
+                        requiresRetry = true
+                    }
                 }
             } else {
                 dao.updateCallJobState(callToExecute.id, "FAILED", error = "Recipient missing")
@@ -79,23 +90,19 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
             }
         }
         
-        // Allow time for SMS PendingIntents to broadcast before finalizing
-        delay(1000)
-        
         // Finalize Events
         val processingEvents = dao.getProcessingEventsSync()
         for (evt in processingEvents) {
             val sms = dao.getSmsJobsForEvent(evt.id)
             val calls = dao.getCallJobsForEvent(evt.id)
-            val allSmsTerminal = sms.all { it.status == "SENT" || it.status == "FAILED" }
-            val allCallsTerminal = calls.all { it.status == "ENDED" || it.status == "FAILED" }
             
-            if (allSmsTerminal && allCallsTerminal) {
-                val hasFailures = sms.any { it.status == "FAILED" } || calls.any { it.status == "FAILED" }
+            val activeSms = sms.any { it.status == "PENDING" || it.status == "RETRYING" || it.status == "SENDING" }
+            val activeCalls = calls.any { it.status == "PENDING" || it.status == "RETRYING" || it.status == "DIALING" }
+            
+            if (!activeSms && !activeCalls) {
+                val hasFailures = sms.any { it.status != "SENT" } || calls.any { it.status != "ENDED" }
                 val terminalState = if (hasFailures) "FAILED" else "COMPLETED"
                 dao.updateEventStatus(evt.id, terminalState, System.currentTimeMillis())
-            } else if (sms.isEmpty() && calls.isEmpty()) {
-                dao.updateEventStatus(evt.id, "COMPLETED", System.currentTimeMillis())
             } else {
                 hasPendingWork = true
             }

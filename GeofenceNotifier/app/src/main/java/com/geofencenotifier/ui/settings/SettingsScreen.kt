@@ -34,7 +34,7 @@ fun SettingsScreen(dao: AppDao, onBack: () -> Unit) {
                     onValueChange = { 
                         cooldown = it
                         val v = it.toIntOrNull()
-                        if (v != null && v >= 0) {
+                        if (v != null && v in 1..1440) {
                             cdError = false
                             scope.launch { dao.insertSettings(settings.copy(globalCooldownMinutes = v)) }
                         } else {
@@ -45,7 +45,7 @@ fun SettingsScreen(dao: AppDao, onBack: () -> Unit) {
                     isError = cdError,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (cdError) Text("Must be >= 0", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                if (cdError) Text("Must be 1-1440", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 
                 var callDur by remember(settings.defaultCallDuration) { mutableStateOf(settings.defaultCallDuration.toString()) }
                 var callDurError by remember { mutableStateOf(false) }
