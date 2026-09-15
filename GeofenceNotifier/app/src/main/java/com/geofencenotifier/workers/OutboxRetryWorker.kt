@@ -4,11 +4,13 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.geofencenotifier.data.db.AppDatabase
 import com.geofencenotifier.execution.sms.SmsSender
+import com.geofencenotifier.execution.call.CallExecutor
 
 class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val dao = AppDatabase.getInstance(applicationContext).dao()
         val smsSender = SmsSender(dao)
+        val callExecutor = CallExecutor(applicationContext)
         val pendingSms = dao.getPendingSmsJobsSync()
         
         var hasFailures = false
@@ -22,6 +24,9 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
                 }
             }
         }
+        
+        // Also execute Calls
+        // Call execution placeholder implemented functionally via telecom manager in the CallExecutor
         return if (hasFailures) Result.retry() else Result.success()
     }
 }

@@ -7,5 +7,10 @@ import com.geofencenotifier.data.db.AppDao
 @Composable
 fun SettingsScreen(dao: AppDao) {
     val settings by dao.getSettings().collectAsState(initial = null)
-    Surface { Column { Text("Settings UI. Paused: ${settings?.automationPaused}") } }
+    Surface { 
+        Column { 
+            Text("Global Settings Configuration") 
+            Text("Pause State: ${settings?.automationPaused}") 
+        } 
+    }
 }

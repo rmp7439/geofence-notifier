@@ -6,5 +6,10 @@ import com.geofencenotifier.data.db.AppDao
 
 @Composable
 fun TestModeScreen(dao: AppDao) {
-    Surface { Column { Text("Test Mode Settings") } }
+    Surface { 
+        Column { 
+            Text("Simulated Event Testing Module")
+            Button(onClick = {}) { Text("Trigger Test Event") }
+        } 
+    }
 }

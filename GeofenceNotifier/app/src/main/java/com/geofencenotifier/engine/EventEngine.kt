@@ -3,13 +3,17 @@ import com.geofencenotifier.data.db.AppDao
 import com.geofencenotifier.core.model.Event
 import com.geofencenotifier.core.model.SmsJob
 import com.geofencenotifier.core.model.CallJob
+import kotlinx.coroutines.flow.firstOrNull
 
 class EventEngine(private val dao: AppDao) {
     suspend fun processTransition(locationId: Long, transition: String) {
-        val dedupeKey = "${locationId}_${transition}_${System.currentTimeMillis() / 600000}"
+        val settings = dao.getSettings().firstOrNull()
+        val cooldownMillis = 10 * 60000L
+        val dedupeKey = "${locationId}_${transition}_${System.currentTimeMillis() / cooldownMillis}"
+        
         if (dao.getEventByDedupeKey(dedupeKey) != null) return
         
-        val eventId = dao.insertEvent(Event(locationId = locationId, transitionType = transition, dedupeKey = dedupeKey, status = "IN_PROGRESS"))
+        val eventId = dao.insertEvent(Event(locationId = locationId, transitionType = transition, dedupeKey = dedupeKey, status = "PROCESSING"))
         val rules = dao.getRulesByLocationIdSync(locationId)
         
         rules.forEach { rule ->
@@ -25,6 +29,5 @@ class EventEngine(private val dao: AppDao) {
                 }
             }
         }
-        dao.updateEventStatus(eventId, "COMPLETE")
     }
 }

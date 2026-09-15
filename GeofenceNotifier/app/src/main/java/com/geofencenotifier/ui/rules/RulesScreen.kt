@@ -1,10 +1,15 @@
 package com.geofencenotifier.ui.rules
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import com.geofencenotifier.data.db.AppDao
 
 @Composable
 fun RulesScreen(dao: AppDao) {
-    Surface { Column { Text("Rules UI") } }
+    Surface {
+        LazyColumn {
+            item { Text("Rule Management List") }
+        }
+    }
 }
