@@ -139,8 +139,8 @@ fun LocationsScreen(dao: AppDao, onBack: () -> Unit) {
                         val eHrValid = endHr.isBlank() || hrRegex.matches(endHr)
                         val bothHr = (startHr.isNotBlank() && endHr.isNotBlank()) || (startHr.isBlank() && endHr.isBlank())
                         
-                        if (name.isBlank() || lat == null || lng == null || rad == null || cd == null || rad < 100f || lat !in -90.0..90.0 || lng !in -180.0..180.0 || cd < 0) {
-                            error = "Invalid basic config. Rad >= 100. CD >= 0."
+                        if (name.isBlank() || lat == null || lng == null || rad == null || cd == null || rad < 100f || lat !in -90.0..90.0 || lng !in -180.0..180.0 || cd < 1 || cd > 1440) {
+                            error = "Invalid basic config. Rad >= 100. CD 1-1440."
                         } else if (!sHrValid || !eHrValid || !bothHr) {
                             error = "Active hours must be HH:MM or both blank."
                         } else {

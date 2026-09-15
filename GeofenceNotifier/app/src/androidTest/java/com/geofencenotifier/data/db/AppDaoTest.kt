@@ -40,11 +40,12 @@ class AppDaoTest {
         
         val event2 = Event(locationId = 1, transitionType = "ENTER", dedupeKey = "DEDUPE_1", status = "PROCESSING")
         val id2 = dao.insertEventWithJobs(event2, emptyList(), emptyList())
-        assertEquals(-1L, id2) // Dedupe key collision prevents insert
+        assertEquals(-1L, id2)
     }
 
     @Test
     fun testClaimSmsJob() = runBlocking {
+        dao.insertLocation(Location(id = 1, name = "Loc", latitude = 0.0, longitude = 0.0, radiusMeters = 100f))
         val recId = dao.insertRecipient(Recipient(name = "Test", phoneNumber = "123", smsEnabled = true, callEnabled = false))
         val evtId = dao.insertEventWithJobs(
             Event(locationId = 1, transitionType = "ENTER", dedupeKey = "K1", status = "PROCESSING"),
@@ -57,11 +58,12 @@ class AppDaoTest {
         assertEquals(1, rowsClaimed)
         
         val doubleClaim = dao.claimSmsJob(sms.id)
-        assertEquals(0, doubleClaim) // Already SENDING
+        assertEquals(0, doubleClaim)
     }
     
     @Test
     fun testStaleRecovery() = runBlocking {
+        dao.insertLocation(Location(id = 1, name = "Loc", latitude = 0.0, longitude = 0.0, radiusMeters = 100f))
         val recId = dao.insertRecipient(Recipient(name = "Test", phoneNumber = "123", smsEnabled = true, callEnabled = false))
         val evtId = dao.insertEventWithJobs(
             Event(locationId = 1, transitionType = "ENTER", dedupeKey = "K2", status = "PROCESSING"),
@@ -70,9 +72,8 @@ class AppDaoTest {
         )
         val sms = dao.getPendingSmsJobsSync().first()
         
-        dao.claimSmsJob(sms.id, startedAt = System.currentTimeMillis() - 300000L) // Claimed 5 mins ago
-        
-        dao.recoverStaleSmsJobs(cutoff = System.currentTimeMillis() - 120000L) // 2 min cutoff
+        dao.claimSmsJob(sms.id, startedAt = System.currentTimeMillis() - 300000L)
+        dao.recoverStaleSmsJobs(cutoff = System.currentTimeMillis() - 120000L)
         
         val recovered = dao.getPendingSmsJobsSync().first()
         assertEquals("RETRYING", recovered.status)

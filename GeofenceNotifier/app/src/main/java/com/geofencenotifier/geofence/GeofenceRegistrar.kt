@@ -84,7 +84,12 @@ class GeofenceRegistrar(private val context: Context, private val dao: AppDao) {
         var successCount = 0
         for (loc in activeLocations) {
             val res = registerGeofence(loc.id)
-            if (res) successCount++
+            if (res) {
+                successCount++
+                dao.updateLocation(loc.copy(registrationState = "REGISTERED"))
+            } else {
+                dao.updateLocation(loc.copy(registrationState = "REGISTRATION_FAILED"))
+            }
         }
         
         return when {
