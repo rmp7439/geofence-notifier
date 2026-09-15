@@ -2,6 +2,7 @@ package com.geofencenotifier.execution.call
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.telecom.TelecomManager
 import kotlinx.coroutines.delay
 
 class CallExecutor(private val context: Context) {
@@ -12,6 +13,14 @@ class CallExecutor(private val context: Context) {
         }
         context.startActivity(intent)
         delay(durationSeconds * 1000L)
-        // Telecom termination logic goes here through bound Abstraction per SDK version.
+        
+        try {
+            val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+            if (context.checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                telecomManager.endCall()
+            }
+        } catch (e: Exception) {
+            // End call failed due to permission or OS limitations
+        }
     }
 }

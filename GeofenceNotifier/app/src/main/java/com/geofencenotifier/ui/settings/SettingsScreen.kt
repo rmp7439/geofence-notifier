@@ -1,8 +1,11 @@
 package com.geofencenotifier.ui.settings
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Column
+import com.geofencenotifier.data.db.AppDao
 
 @Composable
-fun SettingsScreen() {
-    Text("Real Settings UI implemented via ViewModel mapping.")
+fun SettingsScreen(dao: AppDao) {
+    val settings by dao.getSettings().collectAsState(initial = null)
+    Surface { Column { Text("Settings UI. Paused: ${settings?.automationPaused}") } }
 }
