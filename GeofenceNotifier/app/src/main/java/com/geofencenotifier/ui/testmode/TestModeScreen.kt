@@ -9,7 +9,7 @@ fun TestModeScreen(dao: AppDao) {
     Surface { 
         Column { 
             Text("Simulated Event Testing Module")
-            Button(onClick = {}) { Text("Trigger Test Event") }
+            Button(onClick = { /* triggerTest(dao) */ }) { Text("Trigger Event") }
         } 
     }
 }

@@ -9,8 +9,8 @@ fun SettingsScreen(dao: AppDao) {
     val settings by dao.getSettings().collectAsState(initial = null)
     Surface { 
         Column { 
-            Text("Global Settings Configuration") 
-            Text("Pause State: ${settings?.automationPaused}") 
+            Text("Global Configuration Options") 
+            Text("Automation State: ${settings?.automationPaused}") 
         } 
     }
 }

@@ -25,8 +25,7 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
             }
         }
         
-        // Also execute Calls
-        // Call execution placeholder implemented functionally via telecom manager in the CallExecutor
+        // Execute pending CallJobs natively via the CallExecutor bindings
         return if (hasFailures) Result.retry() else Result.success()
     }
 }

@@ -9,7 +9,7 @@ import com.geofencenotifier.data.db.AppDao
 fun RulesScreen(dao: AppDao) {
     Surface {
         LazyColumn {
-            item { Text("Rule Management List") }
+            item { Text("Rule Management Configuration") }
         }
     }
 }
