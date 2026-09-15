@@ -5,3 +5,6 @@
 **/local.properties
 
 **/gradle-*.zip
+
+# RepoSync output
+app.txt
