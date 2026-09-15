@@ -53,7 +53,7 @@ data class Event(
     val locationId: Long,
     val transitionType: String,
     val dedupeKey: String,
-    val status: String, // PROCESSING, COMPLETE, FAILED
+    val status: String, // PROCESSING, COMPLETED, FAILED
     val detectedAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = null
 )

@@ -21,6 +21,10 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
                 dao.updateSmsJobState(job.id, "FAILED", error = "Max retries exceeded")
                 continue
             }
+            // Atomic claim
+            val claimed = dao.claimSmsJob(job.id)
+            if (claimed == 0) continue // Another worker grabbed it
+            
             val rec = dao.getRecipientSync(job.recipientId)
             if (rec != null) {
                 val success = smsSender.sendSms(job.id, rec.phoneNumber, job.renderedMessage)
@@ -30,18 +34,21 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
             }
         }
         
-        // Call Execution
+        // Call Execution (Sequenced per Event)
         val pendingCalls = dao.getPendingCallJobsSync()
         val eventsToCalls = pendingCalls.groupBy { it.eventId }
         
-        for ((eventId, calls) in eventsToCalls) {
-            // Sequence calls: execute the first pending one in sequence
+        for ((_, calls) in eventsToCalls) {
             val callToExecute = calls.minByOrNull { it.sequenceNumber } ?: continue
             
             if (callToExecute.attemptCount >= 3) {
                 dao.updateCallJobState(callToExecute.id, "FAILED", error = "Max retries exceeded")
+                // A failure here means the sequence breaks or continues. We mark it FAILED and next time sequence 2 runs.
                 continue
             }
+            
+            val claimed = dao.claimCallJob(callToExecute.id)
+            if (claimed == 0) continue
             
             val rec = dao.getRecipientSync(callToExecute.recipientId)
             if (rec != null) {
@@ -59,9 +66,19 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
             val calls = dao.getCallJobsForEvent(evt.id)
             val allSmsDone = sms.all { it.status == "SENT" || it.status == "FAILED" }
             val allCallsDone = calls.all { it.status == "ENDED" || it.status == "FAILED" }
+            
             if (allSmsDone && allCallsDone) {
-                dao.updateEventStatus(evt.id, "COMPLETE", System.currentTimeMillis())
+                val hasFailures = sms.any { it.status == "FAILED" } || calls.any { it.status == "FAILED" }
+                val terminalState = if (hasFailures && sms.all { it.status == "FAILED" } && calls.all { it.status == "FAILED" }) "FAILED" else "COMPLETED"
+                dao.updateEventStatus(evt.id, terminalState, System.currentTimeMillis())
             }
+        }
+        
+        // Retention cleanup
+        val settings = dao.getSettingsSync()
+        if (settings != null) {
+            val cutoff = System.currentTimeMillis() - (settings.logRetentionDays * 24L * 60 * 60 * 1000)
+            dao.deleteOldEvents(cutoff)
         }
         
         return if (requiresRetry) Result.retry() else Result.success()
