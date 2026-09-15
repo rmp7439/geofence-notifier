@@ -6,25 +6,26 @@ import com.geofencenotifier.core.model.*
 @Dao
 interface AppDao {
     @Query("SELECT * FROM Location") fun getLocations(): Flow<List<Location>>
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertLocation(loc: Location): Long
-    @Delete suspend fun deleteLocation(loc: Location)
+    @Query("SELECT * FROM Location WHERE active = 1") suspend fun getActiveLocationsSync(): List<Location>
+    @Insert suspend fun insertLocation(loc: Location): Long
 
     @Query("SELECT * FROM Recipient") fun getRecipients(): Flow<List<Recipient>>
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertRecipient(rec: Recipient): Long
-    @Delete suspend fun deleteRecipient(rec: Recipient)
-
-    @Query("SELECT * FROM NotificationRule") fun getRules(): Flow<List<NotificationRule>>
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertRule(rule: NotificationRule): Long
-    @Delete suspend fun deleteRule(rule: NotificationRule)
-
+    @Query("SELECT * FROM Recipient WHERE id = :id") suspend fun getRecipientSync(id: Long): Recipient?
+    
+    @Query("SELECT * FROM NotificationRule WHERE locationId = :locId") suspend fun getRulesByLocationIdSync(locId: Long): List<NotificationRule>
+    
     @Query("SELECT * FROM Event ORDER BY detectedAt DESC") fun getEvents(): Flow<List<Event>>
     @Insert suspend fun insertEvent(evt: Event): Long
+    @Query("SELECT * FROM Event WHERE dedupeKey = :key LIMIT 1") suspend fun getEventByDedupeKey(key: String): Event?
+    @Query("UPDATE Event SET status = :status WHERE id = :id") suspend fun updateEventStatus(id: Long, status: String)
 
     @Query("SELECT * FROM AppSettings WHERE id = 1") fun getSettings(): Flow<AppSettings?>
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSettings(settings: AppSettings)
-    
-    @Query("SELECT * FROM Event WHERE dedupeKey = :key LIMIT 1") suspend fun getEventByDedupeKey(key: String): Event?
     
     @Insert suspend fun insertSmsJob(job: SmsJob)
+    @Query("SELECT * FROM SmsJob WHERE status = 'PENDING'") suspend fun getPendingSmsJobsSync(): List<SmsJob>
+    @Query("UPDATE SmsJob SET status = :status WHERE id = :id") suspend fun updateSmsJobStatus(id: Long, status: String)
+    @Query("UPDATE SmsJob SET lastError = :error WHERE id = :id") suspend fun updateSmsJobError(id: Long, error: String)
+    @Query("UPDATE SmsJob SET sentAt = :time WHERE id = :id") suspend fun updateSmsJobSentAt(id: Long, time: Long)
+    
     @Insert suspend fun insertCallJob(job: CallJob)
 }

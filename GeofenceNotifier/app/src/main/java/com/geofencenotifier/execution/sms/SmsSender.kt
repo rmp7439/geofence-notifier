@@ -1,15 +1,17 @@
 package com.geofencenotifier.execution.sms
 import android.telephony.SmsManager
-import android.util.Log
+import com.geofencenotifier.data.db.AppDao
 
-class SmsSender {
-    fun sendSms(phone: String, message: String) {
+class SmsSender(private val dao: AppDao) {
+    suspend fun sendSms(jobId: Long, phone: String, message: String) {
+        dao.updateSmsJobStatus(jobId, "SENDING")
         try {
-            val smsManager = SmsManager.getDefault()
-            smsManager.sendTextMessage(phone, null, message, null, null)
-            Log.i("SmsSender", "SMS sent successfully to $phone")
+            SmsManager.getDefault().sendTextMessage(phone, null, message, null, null)
+            dao.updateSmsJobStatus(jobId, "SENT")
+            dao.updateSmsJobSentAt(jobId, System.currentTimeMillis())
         } catch (e: Exception) {
-            Log.e("SmsSender", "Failed to send SMS to $phone", e)
+            dao.updateSmsJobStatus(jobId, "FAILED")
+            dao.updateSmsJobError(jobId, e.message ?: "Unknown Error")
         }
     }
 }
