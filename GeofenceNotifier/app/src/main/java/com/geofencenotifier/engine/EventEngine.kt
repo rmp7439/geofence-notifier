@@ -1,33 +1,76 @@
 package com.geofencenotifier.engine
+import android.content.Context
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.geofencenotifier.data.db.AppDao
-import com.geofencenotifier.core.model.Event
-import com.geofencenotifier.core.model.SmsJob
-import com.geofencenotifier.core.model.CallJob
+import com.geofencenotifier.core.model.*
+import com.geofencenotifier.workers.OutboxRetryWorker
 import kotlinx.coroutines.flow.firstOrNull
+import java.util.Calendar
 
-class EventEngine(private val dao: AppDao) {
+class EventEngine(private val context: Context, private val dao: AppDao) {
     suspend fun processTransition(locationId: Long, transition: String) {
+        val location = dao.getLocationSync(locationId) ?: return
+        if (!location.active) return
+        
         val settings = dao.getSettings().firstOrNull()
-        val cooldownMillis = 10 * 60000L
-        val dedupeKey = "${locationId}_${transition}_${System.currentTimeMillis() / cooldownMillis}"
+        if (settings?.automationPaused == true) return
+        
+        if (location.activeHoursStart != null && location.activeHoursEnd != null) {
+            val cal = Calendar.getInstance()
+            val hour = cal.get(Calendar.HOUR_OF_DAY)
+            val min = cal.get(Calendar.MINUTE)
+            val currentMinutes = hour * 60 + min
+            
+            val startParts = location.activeHoursStart.split(":")
+            val endParts = location.activeHoursEnd.split(":")
+            if (startParts.size == 2 && endParts.size == 2) {
+                val startMins = startParts[0].toInt() * 60 + startParts[1].toInt()
+                val endMins = endParts[0].toInt() * 60 + endParts[1].toInt()
+                
+                val inWindow = if (startMins <= endMins) {
+                    currentMinutes in startMins..endMins
+                } else {
+                    currentMinutes >= startMins || currentMinutes <= endMins
+                }
+                if (!inWindow) return
+            }
+        }
+        
+        val cooldownMins = location.cooldownMinutes.takeIf { it > 0 } ?: settings?.globalCooldownMinutes ?: 10
+        val cooldownMillis = cooldownMins * 60000L
+        val timeWindow = System.currentTimeMillis() / cooldownMillis
+        val dedupeKey = "${locationId}_${transition}_$timeWindow"
         
         if (dao.getEventByDedupeKey(dedupeKey) != null) return
         
-        val eventId = dao.insertEvent(Event(locationId = locationId, transitionType = transition, dedupeKey = dedupeKey, status = "PROCESSING"))
+        val event = Event(locationId = locationId, transitionType = transition, dedupeKey = dedupeKey, status = "PROCESSING")
         val rules = dao.getRulesByLocationIdSync(locationId)
+        
+        val smsJobs = mutableListOf<SmsJob>()
+        val callJobs = mutableListOf<CallJob>()
         
         rules.forEach { rule ->
             val recipient = dao.getRecipientSync(rule.recipientId) ?: return@forEach
-            val msg = rule.messageTemplate.replace("{location}", locationId.toString()).replace("{event}", transition)
-            
+            val msg = rule.messageTemplate
+                .replace("{location}", location.name)
+                .replace("{event}", transition)
+                .replace("{time}", System.currentTimeMillis().toString())
+                
             if (recipient.smsEnabled) {
-                dao.insertSmsJob(SmsJob(eventId = eventId, recipientId = recipient.id, renderedMessage = msg, status = "PENDING"))
+                smsJobs.add(SmsJob(eventId = 0, recipientId = recipient.id, renderedMessage = msg, status = "PENDING"))
             }
             if (recipient.callEnabled) {
+                val callDuration = recipient.callDurationSeconds.takeIf { it > 0 } ?: settings?.defaultCallDuration ?: 12
                 for (i in 1..recipient.callCount) {
-                    dao.insertCallJob(CallJob(eventId = eventId, recipientId = recipient.id, sequenceNumber = i, status = "PENDING"))
+                    callJobs.add(CallJob(eventId = 0, recipientId = recipient.id, sequenceNumber = i, durationSeconds = callDuration, status = "PENDING"))
                 }
             }
         }
+        
+        dao.insertEventWithJobs(event, smsJobs, callJobs)
+        
+        val req = OneTimeWorkRequestBuilder<OutboxRetryWorker>().build()
+        WorkManager.getInstance(context).enqueue(req)
     }
 }
