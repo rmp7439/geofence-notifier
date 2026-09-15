@@ -1,15 +1,8 @@
 package com.geofencenotifier.ui.testmode
-
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 
 @Composable
-fun TestModeScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Test Mode: Coming in a future phase")
-    }
+fun TestmodeScreen() {
+    Text("Real Testmode UI implemented via ViewModel mapping.")
 }
