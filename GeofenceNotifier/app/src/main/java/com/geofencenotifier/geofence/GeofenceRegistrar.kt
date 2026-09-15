@@ -68,8 +68,8 @@ class GeofenceRegistrar(private val context: Context, private val dao: AppDao) {
         if (activeLocations.isEmpty()) return "NO_ACTIVE_LOCATIONS"
         
         var successCount = 0
-        activeLocations.forEach { 
-            val res = registerGeofence(it.id)
+        for (loc in activeLocations) {
+            val res = registerGeofence(loc.id)
             if (res) successCount++
         }
         

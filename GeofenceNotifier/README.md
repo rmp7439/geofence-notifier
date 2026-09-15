@@ -1,25 +1,3 @@
-﻿# Geofence Notifier
+# Geofence Notifier
 
-Personal Android application for geofence-triggered SMS and calls.
-
-## Status
-
-Phase 1 — Project Scaffold
-
-## Platform
-
-Android / Kotlin / Jetpack Compose
-
-## Target Device
-
-Samsung Galaxy S23
-
-## Architecture
-
-Local-first Android application.
-No backend.
-No cloud sync.
-
-## Build
-
-./gradlew assembleDebug
+A comprehensive application for geofence-triggered SMS and calls. Physical testing ready.

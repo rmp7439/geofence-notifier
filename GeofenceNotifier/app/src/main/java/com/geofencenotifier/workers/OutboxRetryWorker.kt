@@ -5,12 +5,20 @@ import androidx.work.WorkerParameters
 import com.geofencenotifier.data.db.AppDatabase
 import com.geofencenotifier.execution.sms.SmsSender
 import com.geofencenotifier.execution.call.CallExecutor
+import kotlinx.coroutines.delay
 
 class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val dao = AppDatabase.getInstance(applicationContext).dao()
         val smsSender = SmsSender(dao, applicationContext)
         val callExecutor = CallExecutor(applicationContext, dao)
+        
+        // Stale Job Recovery
+        dao.recoverStaleSmsJobs()
+        dao.failStaleSmsJobs()
+        val cutoff = System.currentTimeMillis() - 60000L // 1 minute stale cutoff for calls
+        dao.recoverStaleCallJobs(cutoff)
+        dao.failStaleCallJobs(cutoff)
         
         var requiresRetry = false
         var hasPendingWork = false
@@ -37,7 +45,7 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
             }
         }
         
-        // Call Execution
+        // Call Execution (Strict sequencing)
         val pendingCalls = dao.getPendingCallJobsSync()
         val eventsToCalls = pendingCalls.groupBy { it.eventId }
         
@@ -46,8 +54,7 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
             
             if (callToExecute.attemptCount >= 3) {
                 dao.updateCallJobState(callToExecute.id, "FAILED", error = "Max retries exceeded")
-                // Continuing to next sequence since this one is terminal
-                hasPendingWork = true // Next sequence will be picked up on next run
+                if (calls.size > 1) hasPendingWork = true
                 continue
             }
             
@@ -63,13 +70,16 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
                 if (!success) {
                     requiresRetry = true
                 } else if (calls.size > 1) {
-                    hasPendingWork = true // More calls in sequence
+                    hasPendingWork = true
                 }
             } else {
                 dao.updateCallJobState(callToExecute.id, "FAILED", error = "Recipient missing")
-                hasPendingWork = true // Process next sequence
+                if (calls.size > 1) hasPendingWork = true
             }
         }
+        
+        // Allow time for SMS PendingIntents to broadcast before finalizing
+        delay(1000)
         
         // Finalize Events
         val processingEvents = dao.getProcessingEventsSync()
@@ -81,22 +91,22 @@ class OutboxRetryWorker(context: Context, params: WorkerParameters) : CoroutineW
             
             if (allSmsTerminal && allCallsTerminal) {
                 val hasFailures = sms.any { it.status == "FAILED" } || calls.any { it.status == "FAILED" }
-                val allFailed = (sms.isNotEmpty() || calls.isNotEmpty()) && sms.all { it.status == "FAILED" } && calls.all { it.status == "FAILED" }
-                
-                val terminalState = if (allFailed) "FAILED" else "COMPLETED"
+                val terminalState = if (hasFailures) "FAILED" else "COMPLETED"
                 dao.updateEventStatus(evt.id, terminalState, System.currentTimeMillis())
             } else if (sms.isEmpty() && calls.isEmpty()) {
                 dao.updateEventStatus(evt.id, "COMPLETED", System.currentTimeMillis())
+            } else {
+                hasPendingWork = true
             }
         }
         
         // Retention cleanup
         val settings = dao.getSettingsSync()
         if (settings != null) {
-            val cutoff = System.currentTimeMillis() - (settings.logRetentionDays * 24L * 60 * 60 * 1000)
-            dao.deleteOldEvents(cutoff)
+            val cutoffDate = System.currentTimeMillis() - (settings.logRetentionDays * 24L * 60 * 60 * 1000)
+            dao.deleteOldEvents(cutoffDate)
         }
         
-        return if (requiresRetry) Result.retry() else if (hasPendingWork) Result.retry() else Result.success()
+        return if (requiresRetry || hasPendingWork) Result.retry() else Result.success()
     }
 }

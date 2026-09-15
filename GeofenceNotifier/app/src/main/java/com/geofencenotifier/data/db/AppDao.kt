@@ -28,25 +28,28 @@ interface AppDao {
     @Query("SELECT * FROM Event WHERE status = 'PROCESSING'") suspend fun getProcessingEventsSync(): List<Event>
     @Query("SELECT * FROM Event WHERE dedupeKey = :key LIMIT 1") suspend fun getEventByDedupeKey(key: String): Event?
     
-    // Ignore conflict means if dedupeKey exists, insert fails (returns -1)
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertEvent(evt: Event): Long
     @Query("UPDATE Event SET status = :status, completedAt = :completedAt WHERE id = :id") suspend fun updateEventStatus(id: Long, status: String, completedAt: Long? = null)
 
     @Insert suspend fun insertSmsJob(job: SmsJob)
     @Query("SELECT * FROM SmsJob WHERE eventId = :eventId") suspend fun getSmsJobsForEvent(eventId: Long): List<SmsJob>
+    @Query("SELECT * FROM SmsJob WHERE id = :id") suspend fun getSmsJobSync(id: Long): SmsJob?
     @Query("SELECT * FROM SmsJob WHERE status IN ('PENDING', 'RETRYING')") suspend fun getPendingSmsJobsSync(): List<SmsJob>
     
-    // Atomic claim
-    @Query("UPDATE SmsJob SET status = 'SENDING' WHERE id = :id AND status IN ('PENDING', 'RETRYING')") suspend fun claimSmsJob(id: Long): Int
-    @Query("UPDATE SmsJob SET status = :status, attemptCount = attemptCount + 1, lastError = :error, sentAt = :sentAt WHERE id = :id") suspend fun updateSmsJobState(id: Long, status: String, error: String? = null, sentAt: Long? = null)
-    
+    @Query("UPDATE SmsJob SET status = 'SENDING', attemptCount = attemptCount + 1 WHERE id = :id AND status IN ('PENDING', 'RETRYING')") suspend fun claimSmsJob(id: Long): Int
+    @Query("UPDATE SmsJob SET status = :status, lastError = :error, sentAt = :sentAt WHERE id = :id") suspend fun updateSmsJobState(id: Long, status: String, error: String? = null, sentAt: Long? = null)
+    @Query("UPDATE SmsJob SET status = 'RETRYING', lastError = 'Stale job recovered' WHERE status = 'SENDING' AND attemptCount < 3 AND sentAt IS NULL") suspend fun recoverStaleSmsJobs()
+    @Query("UPDATE SmsJob SET status = 'FAILED', lastError = 'Stale job failed (max attempts)' WHERE status = 'SENDING' AND attemptCount >= 3 AND sentAt IS NULL") suspend fun failStaleSmsJobs()
+
     @Insert suspend fun insertCallJob(job: CallJob)
     @Query("SELECT * FROM CallJob WHERE eventId = :eventId") suspend fun getCallJobsForEvent(eventId: Long): List<CallJob>
     @Query("SELECT * FROM CallJob WHERE status IN ('PENDING', 'RETRYING') ORDER BY sequenceNumber ASC") suspend fun getPendingCallJobsSync(): List<CallJob>
     
-    // Atomic claim
-    @Query("UPDATE CallJob SET status = 'DIALING' WHERE id = :id AND status IN ('PENDING', 'RETRYING')") suspend fun claimCallJob(id: Long): Int
-    @Query("UPDATE CallJob SET status = :status, attemptCount = attemptCount + 1, lastError = :error, startedAt = :startedAt, endedAt = :endedAt, observedTelephonyState = :state WHERE id = :id") suspend fun updateCallJobState(id: Long, status: String, error: String? = null, startedAt: Long? = null, endedAt: Long? = null, state: String? = null)
+    @Query("UPDATE CallJob SET status = 'DIALING', attemptCount = attemptCount + 1, startedAt = :startedAt WHERE id = :id AND status IN ('PENDING', 'RETRYING')") suspend fun claimCallJob(id: Long, startedAt: Long = System.currentTimeMillis()): Int
+    @Query("UPDATE CallJob SET status = :status, lastError = :error, endedAt = :endedAt, observedTelephonyState = :state WHERE id = :id") suspend fun updateCallJobState(id: Long, status: String, error: String? = null, endedAt: Long? = null, state: String? = null)
+    
+    @Query("UPDATE CallJob SET status = 'RETRYING', lastError = 'Stale call recovered' WHERE status = 'DIALING' AND attemptCount < 3 AND startedAt < :cutoff") suspend fun recoverStaleCallJobs(cutoff: Long)
+    @Query("UPDATE CallJob SET status = 'FAILED', lastError = 'Stale call failed (max attempts)' WHERE status = 'DIALING' AND attemptCount >= 3 AND startedAt < :cutoff") suspend fun failStaleCallJobs(cutoff: Long)
 
     @Query("SELECT * FROM AppSettings WHERE id = 1") fun getSettings(): Flow<AppSettings?>
     @Query("SELECT * FROM AppSettings WHERE id = 1") suspend fun getSettingsSync(): AppSettings?
@@ -57,7 +60,7 @@ interface AppDao {
     @Transaction
     suspend fun insertEventWithJobs(event: Event, smsJobs: List<SmsJob>, callJobs: List<CallJob>): Long {
         val eventId = insertEvent(event)
-        if (eventId == -1L) return -1L // Dedupe race condition prevented
+        if (eventId == -1L) return -1L
         smsJobs.forEach { insertSmsJob(it.copy(eventId = eventId)) }
         callJobs.forEach { insertCallJob(it.copy(eventId = eventId)) }
         return eventId

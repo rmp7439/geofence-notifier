@@ -32,8 +32,8 @@ class EventEngine(private val context: Context, private val dao: AppDao) {
             val startParts = location.activeHoursStart.split(":")
             val endParts = location.activeHoursEnd.split(":")
             if (startParts.size == 2 && endParts.size == 2) {
-                val startMins = startParts[0].toInt() * 60 + startParts[1].toInt()
-                val endMins = endParts[0].toInt() * 60 + endParts[1].toInt()
+                val startMins = startParts[0].toIntOrNull()?.times(60)?.plus(startParts[1].toIntOrNull() ?: 0) ?: 0
+                val endMins = endParts[0].toIntOrNull()?.times(60)?.plus(endParts[1].toIntOrNull() ?: 0) ?: 0
                 
                 val inWindow = if (startMins <= endMins) {
                     currentMinutes in startMins..endMins
@@ -75,6 +75,7 @@ class EventEngine(private val context: Context, private val dao: AppDao) {
             }
         }
         
+        // Transactional insert to preserve dedupe atomic constraint
         val eventId = dao.insertEventWithJobs(event, smsJobs, callJobs)
         if (eventId != -1L) {
             val req = OneTimeWorkRequestBuilder<OutboxRetryWorker>()

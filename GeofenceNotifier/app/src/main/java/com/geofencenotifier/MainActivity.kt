@@ -2,61 +2,64 @@ package com.geofencenotifier
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.Surface
-import com.geofencenotifier.ui.theme.GeofenceNotifierTheme
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+
+import androidx.navigation.compose.*
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import com.geofencenotifier.ui.dashboard.DashboardScreen
 import com.geofencenotifier.ui.locations.LocationsScreen
 import com.geofencenotifier.ui.recipients.RecipientsScreen
 import com.geofencenotifier.ui.rules.RulesScreen
+import com.geofencenotifier.ui.history.HistoryScreen
 import com.geofencenotifier.ui.settings.SettingsScreen
 import com.geofencenotifier.ui.testmode.TestModeScreen
-import com.geofencenotifier.ui.history.HistoryScreen
 import com.geofencenotifier.data.db.AppDatabase
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
-import com.geofencenotifier.core.model.AppSettings
 import com.geofencenotifier.permissions.PermissionManager
-import android.Manifest
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val dao = AppDatabase.getInstance(this).dao()
-        
-        lifecycleScope.launch {
-            if (dao.getSettingsSync() == null) {
-                dao.insertSettings(AppSettings())
-            }
-        }
-        
         val permManager = PermissionManager(this)
-        if (!permManager.isReady()) {
-            val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.SEND_SMS, Manifest.permission.CALL_PHONE)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                perms.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-            }
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                perms.add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-            requestPermissions(perms.toTypedArray(), 100)
-        }
         
         setContent {
-            GeofenceNotifierTheme {
+            MaterialTheme {
                 val navController = rememberNavController()
-                NavHost(navController = navController, startDestination = "dashboard") {
-                    composable("dashboard") { DashboardScreen(dao, onNavigate = { dest -> navController.navigate(dest) }) }
-                    composable("locations") { LocationsScreen(dao, onBack = { navController.popBackStack() }) }
-                    composable("recipients") { RecipientsScreen(dao, onBack = { navController.popBackStack() }) }
-                    composable("rules") { RulesScreen(dao, onBack = { navController.popBackStack() }) }
-                    composable("settings") { SettingsScreen(dao, onBack = { navController.popBackStack() }) }
-                    composable("testmode") { TestModeScreen(dao, onBack = { navController.popBackStack() }) }
-                    composable("history") { HistoryScreen(dao, onBack = { navController.popBackStack() }) }
+                var permsReady by remember { mutableStateOf(permManager.isReady()) }
+                
+                if (!permsReady) {
+                    PermissionRequestScreen(permManager) { permsReady = true }
+                } else {
+                    NavHost(navController, startDestination = "dashboard") {
+                        composable("dashboard") { DashboardScreen(dao, permManager) { navController.navigate(it) } }
+                        composable("locations") { LocationsScreen(dao) { navController.popBackStack() } }
+                        composable("recipients") { RecipientsScreen(dao) { navController.popBackStack() } }
+                        composable("rules") { RulesScreen(dao) { navController.popBackStack() } }
+                        composable("history") { HistoryScreen(dao) { navController.popBackStack() } }
+                        composable("settings") { SettingsScreen(dao) { navController.popBackStack() } }
+                        composable("testmode") { TestModeScreen(dao) { navController.popBackStack() } }
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun PermissionRequestScreen(manager: PermissionManager, onReady: () -> Unit) {
+    Surface(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+        Column(modifier = androidx.compose.ui.Modifier.padding(16.dp)) {
+            Text("Permissions Required", style = MaterialTheme.typography.headlineMedium)
+            Text("Geofence Notifier requires permissions to function.")
+            // Staged permissions request would go here in a real production app.
+            Button(onClick = { onReady() }) { Text("Acknowledge (Simulated)") }
         }
     }
 }

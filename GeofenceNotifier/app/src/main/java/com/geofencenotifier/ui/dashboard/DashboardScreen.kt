@@ -5,9 +5,10 @@ import androidx.compose.foundation.layout.*
 import com.geofencenotifier.data.db.AppDao
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.geofencenotifier.permissions.PermissionManager
 
 @Composable
-fun DashboardScreen(dao: AppDao, onNavigate: (String) -> Unit) {
+fun DashboardScreen(dao: AppDao, permManager: PermissionManager, onNavigate: (String) -> Unit) {
     val locs by dao.getLocations().collectAsState(initial = emptyList())
     val recs by dao.getRecipients().collectAsState(initial = emptyList())
     val rules by dao.getRules().collectAsState(initial = emptyList())
@@ -23,11 +24,15 @@ fun DashboardScreen(dao: AppDao, onNavigate: (String) -> Unit) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("System Readiness", style = MaterialTheme.typography.titleMedium)
+                    
                     if (settings?.automationPaused == true) {
                         Text("AUTOMATION PAUSED", color = MaterialTheme.colorScheme.error)
+                    } else if (!permManager.isReady()) {
+                        Text("MISSING PERMISSIONS", color = MaterialTheme.colorScheme.error)
                     } else {
                         Text("AUTOMATION RUNNING", color = MaterialTheme.colorScheme.primary)
                     }
+                    
                     Text("Active Locations: $activeLocs / ${locs.size}")
                     Text("Recipients: ${recs.size}")
                     Text("Active Rules: ${rules.count { it.enabled }} / ${rules.size}")
