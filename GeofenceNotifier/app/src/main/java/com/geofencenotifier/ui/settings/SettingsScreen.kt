@@ -27,29 +27,65 @@ fun SettingsScreen(dao: AppDao, onBack: () -> Unit) {
                     })
                 }
                 
-                var cooldown by remember { mutableStateOf(settings.globalCooldownMinutes.toString()) }
+                var cooldown by remember(settings.globalCooldownMinutes) { mutableStateOf(settings.globalCooldownMinutes.toString()) }
+                var cdError by remember { mutableStateOf(false) }
                 OutlinedTextField(
                     value = cooldown, 
-                    onValueChange = { cooldown = it; it.toIntOrNull()?.let { v -> scope.launch { dao.insertSettings(settings.copy(globalCooldownMinutes = v)) } } },
+                    onValueChange = { 
+                        cooldown = it
+                        val v = it.toIntOrNull()
+                        if (v != null && v >= 0) {
+                            cdError = false
+                            scope.launch { dao.insertSettings(settings.copy(globalCooldownMinutes = v)) }
+                        } else {
+                            cdError = true
+                        }
+                    },
                     label = { Text("Global Cooldown (mins)") },
+                    isError = cdError,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (cdError) Text("Must be >= 0", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 
-                var callDur by remember { mutableStateOf(settings.defaultCallDuration.toString()) }
+                var callDur by remember(settings.defaultCallDuration) { mutableStateOf(settings.defaultCallDuration.toString()) }
+                var callDurError by remember { mutableStateOf(false) }
                 OutlinedTextField(
                     value = callDur, 
-                    onValueChange = { callDur = it; it.toIntOrNull()?.let { v -> scope.launch { dao.insertSettings(settings.copy(defaultCallDuration = v)) } } },
+                    onValueChange = { 
+                        callDur = it
+                        val v = it.toIntOrNull()
+                        if (v != null && v in 1..300) {
+                            callDurError = false
+                            scope.launch { dao.insertSettings(settings.copy(defaultCallDuration = v)) }
+                        } else {
+                            callDurError = true
+                        }
+                    },
                     label = { Text("Default Call Duration (sec)") },
+                    isError = callDurError,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (callDurError) Text("Must be 1-300", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 
-                var ret by remember { mutableStateOf(settings.logRetentionDays.toString()) }
+                var ret by remember(settings.logRetentionDays) { mutableStateOf(settings.logRetentionDays.toString()) }
+                var retError by remember { mutableStateOf(false) }
                 OutlinedTextField(
                     value = ret, 
-                    onValueChange = { ret = it; it.toIntOrNull()?.let { v -> scope.launch { dao.insertSettings(settings.copy(logRetentionDays = v)) } } },
+                    onValueChange = { 
+                        ret = it
+                        val v = it.toIntOrNull()
+                        if (v != null && v in 1..365) {
+                            retError = false
+                            scope.launch { dao.insertSettings(settings.copy(logRetentionDays = v)) }
+                        } else {
+                            retError = true
+                        }
+                    },
                     label = { Text("Log Retention (days)") },
+                    isError = retError,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (retError) Text("Must be 1-365", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("System Guidance:", style = MaterialTheme.typography.titleMedium)

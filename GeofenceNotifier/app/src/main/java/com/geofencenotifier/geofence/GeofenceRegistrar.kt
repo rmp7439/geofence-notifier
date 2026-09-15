@@ -10,6 +10,7 @@ import com.google.android.gms.location.LocationServices
 import com.geofencenotifier.data.db.AppDao
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import android.util.Log
 
 class GeofenceRegistrar(private val context: Context, private val dao: AppDao) {
     private val geofencingClient: GeofencingClient = LocationServices.getGeofencingClient(context)
@@ -50,16 +51,29 @@ class GeofenceRegistrar(private val context: Context, private val dao: AppDao) {
             .build()
             
         return suspendCoroutine { cont ->
-            geofencingClient.addGeofences(request, getPendingIntent(loc.id))
-                .addOnSuccessListener { cont.resume(true) }
-                .addOnFailureListener { cont.resume(false) }
+            try {
+                geofencingClient.addGeofences(request, getPendingIntent(loc.id))
+                    .addOnSuccessListener { cont.resume(true) }
+                    .addOnFailureListener { e -> 
+                        Log.e("GeofenceRegistrar", "Failed to register geofence", e)
+                        cont.resume(false) 
+                    }
+            } catch (e: SecurityException) {
+                Log.e("GeofenceRegistrar", "Missing permission", e)
+                cont.resume(false)
+            }
         }
     }
     
     suspend fun unregisterGeofence(locationId: Long) {
         suspendCoroutine<Unit> { cont ->
-            geofencingClient.removeGeofences(getPendingIntent(locationId))
-                .addOnCompleteListener { cont.resume(Unit) }
+            try {
+                geofencingClient.removeGeofences(getPendingIntent(locationId))
+                    .addOnCompleteListener { cont.resume(Unit) }
+            } catch (e: Exception) {
+                Log.e("GeofenceRegistrar", "Failed to unregister", e)
+                cont.resume(Unit) // Best effort
+            }
         }
     }
     
@@ -75,7 +89,7 @@ class GeofenceRegistrar(private val context: Context, private val dao: AppDao) {
         
         return when {
             successCount == activeLocations.size -> "SUCCESS"
-            successCount > 0 -> "PARTIAL_FAILURE"
+            successCount > 0 -> "PARTIAL_FAILURE ($successCount/${activeLocations.size})"
             else -> "FAILURE"
         }
     }

@@ -17,20 +17,26 @@ class CallExecutor(private val context: Context, private val dao: AppDao) {
             delay(durationSeconds * 1000L)
             
             var telecomState = "API_ENDED"
+            var finalStatus = "ENDED"
             try {
                 val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
                 if (context.checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
                     val result = telecomManager.endCall()
-                    if (!result) telecomState = "END_FAILED (System Restricted)"
+                    if (!result) {
+                        telecomState = "END_FAILED (System Restricted)"
+                        finalStatus = "FAILED"
+                    }
                 } else {
                     telecomState = "END_RESTRICTED (Missing Permission)"
+                    finalStatus = "FAILED"
                 }
             } catch (e: Exception) {
                 telecomState = "END_FAILED (${e.message})"
+                finalStatus = "FAILED"
             }
             
-            dao.updateCallJobState(jobId, "ENDED", endedAt = System.currentTimeMillis(), state = telecomState)
-            true
+            dao.updateCallJobState(jobId, finalStatus, endedAt = System.currentTimeMillis(), state = telecomState)
+            true // Don't retry if initiation succeeded but termination failed
         } catch (e: SecurityException) {
             dao.updateCallJobState(jobId, "FAILED", error = "Missing CALL_PHONE permission")
             false

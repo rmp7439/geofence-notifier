@@ -16,33 +16,39 @@ fun RulesScreen(dao: AppDao, onBack: () -> Unit) {
     val rules by dao.getRules().collectAsState(initial = emptyList())
     val locs by dao.getLocations().collectAsState(initial = emptyList())
     val recs by dao.getRecipients().collectAsState(initial = emptyList())
+    
     val scope = rememberCoroutineScope()
-    var showDialog by remember { mutableStateOf(false) }
+    var editingRule by remember { mutableStateOf<NotificationRule?>(null) }
+    var showAdd by remember { mutableStateOf(false) }
     
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row {
                 Button(onClick = onBack) { Text("Back") }
                 Spacer(modifier = Modifier.weight(1f))
-                Button(onClick = { showDialog = true }) { Text("Add Rule") }
+                Button(onClick = { showAdd = true }) { Text("Add Rule") }
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text("Rules", style = MaterialTheme.typography.headlineMedium)
+            Text("Notification Rules", style = MaterialTheme.typography.headlineMedium)
             
             LazyColumn {
                 items(rules) { rule ->
-                    val lName = locs.find { it.id == rule.locationId }?.name ?: "Unknown Loc"
-                    val rName = recs.find { it.id == rule.recipientId }?.name ?: "Unknown Recipient"
+                    val locName = locs.find { it.id == rule.locationId }?.name ?: "Unknown Location"
+                    val recName = recs.find { it.id == rule.recipientId }?.name ?: "Unknown Recipient"
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Column(modifier = Modifier.padding(8.dp)) {
                             Row {
-                                Text("When: $lName -> Notify: $rName", modifier = Modifier.weight(1f))
-                                Switch(checked = rule.enabled, onCheckedChange = { 
-                                    scope.launch { dao.updateRule(rule.copy(enabled = it)) } 
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("When at: $locName", style = MaterialTheme.typography.titleMedium)
+                                    Text("Notify: $recName")
+                                    Text("Template: ${rule.messageTemplate}", style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(checked = rule.enabled, onCheckedChange = { en ->
+                                    scope.launch { dao.updateRule(rule.copy(enabled = en)) }
                                 })
                             }
-                            Text(rule.messageTemplate, style = MaterialTheme.typography.bodySmall)
                             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                IconButton(onClick = { editingRule = rule }) { Text("Edit") }
                                 IconButton(onClick = { scope.launch { dao.deleteRule(rule) } }) { Text("Del") }
                             }
                         }
@@ -52,52 +58,74 @@ fun RulesScreen(dao: AppDao, onBack: () -> Unit) {
         }
     }
     
-    if (showDialog) {
-        var selectedLoc by remember { mutableStateOf<Long?>(null) }
-        var selectedRec by remember { mutableStateOf<Long?>(null) }
-        var msg by remember { mutableStateOf("Alert! {location} triggered {event} at {time}.") }
-        var expandedLoc by remember { mutableStateOf(false) }
-        var expandedRec by remember { mutableStateOf(false) }
+    val currentEditor = editingRule
+    if (showAdd || currentEditor != null) {
+        var locId by remember { mutableStateOf(currentEditor?.locationId ?: locs.firstOrNull()?.id ?: 0L) }
+        var recId by remember { mutableStateOf(currentEditor?.recipientId ?: recs.firstOrNull()?.id ?: 0L) }
+        var template by remember { mutableStateOf(currentEditor?.messageTemplate ?: "Alert: {location} {event} at {time}") }
+        var enabled by remember { mutableStateOf(currentEditor?.enabled ?: true) }
+        var errorMsg by remember { mutableStateOf("") }
+        var locExpanded by remember { mutableStateOf(false) }
+        var recExpanded by remember { mutableStateOf(false) }
         
         AlertDialog(
-            onDismissRequest = { showDialog = false },
-            title = { Text("Add Rule") },
+            onDismissRequest = { showAdd = false; editingRule = null },
+            title = { Text(if (currentEditor == null) "Add Rule" else "Edit Rule") },
             text = {
                 Column {
-                    ExposedDropdownMenuBox(expanded = expandedLoc, onExpandedChange = { expandedLoc = !expandedLoc }) {
-                        val selName = locs.find { it.id == selectedLoc }?.name ?: "Select Location"
-                        OutlinedTextField(value = selName, onValueChange = {}, readOnly = true, modifier = Modifier.menuAnchor())
-                        ExposedDropdownMenu(expanded = expandedLoc, onDismissRequest = { expandedLoc = false }) {
+                    ExposedDropdownMenuBox(expanded = locExpanded, onExpandedChange = { locExpanded = !locExpanded }) {
+                        val selLoc = locs.find { it.id == locId }?.name ?: "Select Location"
+                        OutlinedTextField(value = selLoc, onValueChange = {}, readOnly = true, modifier = Modifier.menuAnchor(), label = { Text("Location") })
+                        ExposedDropdownMenu(expanded = locExpanded, onDismissRequest = { locExpanded = false }) {
                             locs.forEach { l ->
-                                DropdownMenuItem(text = { Text(l.name) }, onClick = { selectedLoc = l.id; expandedLoc = false })
+                                DropdownMenuItem(text = { Text(l.name) }, onClick = { locId = l.id; locExpanded = false })
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    ExposedDropdownMenuBox(expanded = expandedRec, onExpandedChange = { expandedRec = !expandedRec }) {
-                        val selName = recs.find { it.id == selectedRec }?.name ?: "Select Recipient"
-                        OutlinedTextField(value = selName, onValueChange = {}, readOnly = true, modifier = Modifier.menuAnchor())
-                        ExposedDropdownMenu(expanded = expandedRec, onDismissRequest = { expandedRec = false }) {
+                    Spacer(Modifier.height(8.dp))
+                    ExposedDropdownMenuBox(expanded = recExpanded, onExpandedChange = { recExpanded = !recExpanded }) {
+                        val selRec = recs.find { it.id == recId }?.name ?: "Select Recipient"
+                        OutlinedTextField(value = selRec, onValueChange = {}, readOnly = true, modifier = Modifier.menuAnchor(), label = { Text("Recipient") })
+                        ExposedDropdownMenu(expanded = recExpanded, onDismissRequest = { recExpanded = false }) {
                             recs.forEach { r ->
-                                DropdownMenuItem(text = { Text(r.name) }, onClick = { selectedRec = r.id; expandedRec = false })
+                                DropdownMenuItem(text = { Text(r.name) }, onClick = { recId = r.id; recExpanded = false })
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(value = msg, onValueChange = { msg = it }, label = { Text("Message Template") })
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = template, onValueChange = { template = it }, label = { Text("Message Template") }, modifier = Modifier.fillMaxWidth())
+                    Text("{location}, {event}, {time} will be replaced", style = MaterialTheme.typography.bodySmall)
+                    
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text("Enabled"); Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    }
+                    if (errorMsg.isNotBlank()) Text(errorMsg, color = MaterialTheme.colorScheme.error)
                 }
             },
             confirmButton = {
                 Button(onClick = {
-                    if (selectedLoc != null && selectedRec != null && msg.isNotBlank()) {
+                    if (locId == 0L || recId == 0L) {
+                        errorMsg = "Must select location and recipient"
+                    } else if (template.isBlank()) {
+                        errorMsg = "Template cannot be blank"
+                    } else {
+                        val r = NotificationRule(
+                            id = currentEditor?.id ?: 0,
+                            locationId = locId,
+                            recipientId = recId,
+                            messageTemplate = template,
+                            enabled = enabled
+                        )
                         scope.launch {
-                            dao.insertRule(NotificationRule(locationId = selectedLoc!!, recipientId = selectedRec!!, messageTemplate = msg, enabled = true))
-                            showDialog = false
+                            if (currentEditor == null) dao.insertRule(r)
+                            else dao.updateRule(r)
+                            showAdd = false
+                            editingRule = null
                         }
                     }
                 }) { Text("Save") }
             },
-            dismissButton = { Button(onClick = { showDialog = false }) { Text("Cancel") } }
+            dismissButton = { Button(onClick = { showAdd = false; editingRule = null }) { Text("Cancel") } }
         )
     }
 }

@@ -12,10 +12,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import com.geofencenotifier.geofence.GeofenceRegistrar
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LocationsScreen(dao: AppDao, onBack: () -> Unit) {
     val locs by dao.getLocations().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
+    var editingLoc by remember { mutableStateOf<Location?>(null) }
     var showAdd by remember { mutableStateOf(false) }
     val context = LocalContext.current
     
@@ -24,7 +26,7 @@ fun LocationsScreen(dao: AppDao, onBack: () -> Unit) {
             Row {
                 Button(onClick = onBack) { Text("Back") }
                 Spacer(modifier = Modifier.weight(1f))
-                Button(onClick = { showAdd = true }) { Text("Add Location") }
+                Button(onClick = { showAdd = true }) { Text("Add") }
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text("Locations", style = MaterialTheme.typography.headlineMedium)
@@ -38,6 +40,10 @@ fun LocationsScreen(dao: AppDao, onBack: () -> Unit) {
                                     Text(loc.name, style = MaterialTheme.typography.titleMedium)
                                     Text("Lat: ${loc.latitude} | Lng: ${loc.longitude}")
                                     Text("Radius: ${loc.radiusMeters}m | Trigger: ${loc.triggerType}")
+                                    Text("Cooldown: ${loc.cooldownMinutes}m", style = MaterialTheme.typography.bodySmall)
+                                    if (loc.activeHoursStart != null && loc.activeHoursEnd != null) {
+                                        Text("Active: ${loc.activeHoursStart} to ${loc.activeHoursEnd}", style = MaterialTheme.typography.bodySmall)
+                                    }
                                 }
                                 Switch(checked = loc.active, onCheckedChange = { active ->
                                     scope.launch { 
@@ -48,10 +54,11 @@ fun LocationsScreen(dao: AppDao, onBack: () -> Unit) {
                                 })
                             }
                             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                IconButton(onClick = { editingLoc = loc }) { Text("Edit") }
                                 IconButton(onClick = { 
                                     scope.launch { 
-                                        dao.deleteLocation(loc)
                                         GeofenceRegistrar(context, dao).unregisterGeofence(loc.id)
+                                        dao.deleteLocation(loc)
                                     } 
                                 }) { Text("Del") }
                             }
@@ -62,22 +69,49 @@ fun LocationsScreen(dao: AppDao, onBack: () -> Unit) {
         }
     }
     
-    if (showAdd) {
-        var name by remember { mutableStateOf("") }
-        var latStr by remember { mutableStateOf("") }
-        var lngStr by remember { mutableStateOf("") }
-        var radStr by remember { mutableStateOf("150") }
+    val currentEditor = editingLoc
+    if (showAdd || currentEditor != null) {
+        var name by remember { mutableStateOf(currentEditor?.name ?: "") }
+        var latStr by remember { mutableStateOf((currentEditor?.latitude ?: "").toString()) }
+        var lngStr by remember { mutableStateOf((currentEditor?.longitude ?: "").toString()) }
+        var radStr by remember { mutableStateOf((currentEditor?.radiusMeters ?: 150f).toString()) }
+        var trigger by remember { mutableStateOf(currentEditor?.triggerType ?: "BOTH") }
+        var cooldown by remember { mutableStateOf((currentEditor?.cooldownMinutes ?: 10).toString()) }
+        var startHr by remember { mutableStateOf(currentEditor?.activeHoursStart ?: "") }
+        var endHr by remember { mutableStateOf(currentEditor?.activeHoursEnd ?: "") }
         var error by remember { mutableStateOf("") }
+        var expandedTrigger by remember { mutableStateOf(false) }
         
         AlertDialog(
-            onDismissRequest = { showAdd = false },
-            title = { Text("Add Location") },
+            onDismissRequest = { showAdd = false; editingLoc = null },
+            title = { Text(if (currentEditor == null) "Add Location" else "Edit Location") },
             text = {
                 Column {
                     OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
-                    OutlinedTextField(value = latStr, onValueChange = { latStr = it }, label = { Text("Latitude") })
-                    OutlinedTextField(value = lngStr, onValueChange = { lngStr = it }, label = { Text("Longitude") })
-                    OutlinedTextField(value = radStr, onValueChange = { radStr = it }, label = { Text("Radius (meters)") })
+                    Row {
+                        OutlinedTextField(value = latStr, onValueChange = { latStr = it }, label = { Text("Lat") }, modifier = Modifier.weight(1f))
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(value = lngStr, onValueChange = { lngStr = it }, label = { Text("Lng") }, modifier = Modifier.weight(1f))
+                    }
+                    OutlinedTextField(value = radStr, onValueChange = { radStr = it }, label = { Text("Radius (m)") })
+                    OutlinedTextField(value = cooldown, onValueChange = { cooldown = it }, label = { Text("Cooldown (mins)") })
+                    
+                    ExposedDropdownMenuBox(expanded = expandedTrigger, onExpandedChange = { expandedTrigger = !expandedTrigger }) {
+                        OutlinedTextField(value = trigger, onValueChange = {}, readOnly = true, modifier = Modifier.menuAnchor(), label = { Text("Trigger Type") })
+                        ExposedDropdownMenu(expanded = expandedTrigger, onDismissRequest = { expandedTrigger = false }) {
+                            listOf("BOTH", "ENTER", "EXIT").forEach { t ->
+                                DropdownMenuItem(text = { Text(t) }, onClick = { trigger = t; expandedTrigger = false })
+                            }
+                        }
+                    }
+                    
+                    Text("Active Hours (HH:MM) Optional:", style = MaterialTheme.typography.labelSmall)
+                    Row {
+                        OutlinedTextField(value = startHr, onValueChange = { startHr = it }, label = { Text("Start") }, modifier = Modifier.weight(1f))
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(value = endHr, onValueChange = { endHr = it }, label = { Text("End") }, modifier = Modifier.weight(1f))
+                    }
+                    
                     if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -86,18 +120,47 @@ fun LocationsScreen(dao: AppDao, onBack: () -> Unit) {
                     val lat = latStr.toDoubleOrNull()
                     val lng = lngStr.toDoubleOrNull()
                     val rad = radStr.toFloatOrNull()
-                    if (name.isBlank() || lat == null || lng == null || rad == null || rad < 100f || lat !in -90.0..90.0 || lng !in -180.0..180.0) {
-                        error = "Invalid inputs. Radius must be >= 100m. Lat/Lng must be valid."
+                    val cd = cooldown.toIntOrNull()
+                    
+                    val hrRegex = Regex("^([01]\\d|2[0-3]):([0-5]\\d)$")
+                    val sHrValid = startHr.isBlank() || hrRegex.matches(startHr)
+                    val eHrValid = endHr.isBlank() || hrRegex.matches(endHr)
+                    val bothHr = (startHr.isNotBlank() && endHr.isNotBlank()) || (startHr.isBlank() && endHr.isBlank())
+                    
+                    if (name.isBlank() || lat == null || lng == null || rad == null || cd == null || rad < 100f || lat !in -90.0..90.0 || lng !in -180.0..180.0 || cd < 0) {
+                        error = "Invalid basic config. Rad >= 100. CD >= 0."
+                    } else if (!sHrValid || !eHrValid || !bothHr) {
+                        error = "Active hours must be HH:MM or both blank."
                     } else {
+                        val finalLoc = Location(
+                            id = currentEditor?.id ?: 0,
+                            name = name,
+                            latitude = lat,
+                            longitude = lng,
+                            radiusMeters = rad,
+                            triggerType = trigger,
+                            active = currentEditor?.active ?: true,
+                            cooldownMinutes = cd,
+                            activeHoursStart = startHr.takeIf { it.isNotBlank() },
+                            activeHoursEnd = endHr.takeIf { it.isNotBlank() }
+                        )
                         scope.launch {
-                            val id = dao.insertLocation(Location(name = name, latitude = lat, longitude = lng, radiusMeters = rad))
-                            GeofenceRegistrar(context, dao).registerGeofence(id)
+                            val reg = GeofenceRegistrar(context, dao)
+                            if (currentEditor != null) {
+                                reg.unregisterGeofence(currentEditor.id)
+                                dao.updateLocation(finalLoc)
+                                if (finalLoc.active) reg.registerGeofence(finalLoc.id)
+                            } else {
+                                val id = dao.insertLocation(finalLoc)
+                                if (finalLoc.active) reg.registerGeofence(id)
+                            }
                             showAdd = false
+                            editingLoc = null
                         }
                     }
                 }) { Text("Save") }
             },
-            dismissButton = { Button(onClick = { showAdd = false }) { Text("Cancel") } }
+            dismissButton = { Button(onClick = { showAdd = false; editingLoc = null }) { Text("Cancel") } }
         )
     }
 }

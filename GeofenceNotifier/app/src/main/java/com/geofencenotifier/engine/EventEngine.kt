@@ -32,15 +32,28 @@ class EventEngine(private val context: Context, private val dao: AppDao) {
             val startParts = location.activeHoursStart.split(":")
             val endParts = location.activeHoursEnd.split(":")
             if (startParts.size == 2 && endParts.size == 2) {
-                val startMins = startParts[0].toIntOrNull()?.times(60)?.plus(startParts[1].toIntOrNull() ?: 0) ?: 0
-                val endMins = endParts[0].toIntOrNull()?.times(60)?.plus(endParts[1].toIntOrNull() ?: 0) ?: 0
+                val sH = startParts[0].toIntOrNull()
+                val sM = startParts[1].toIntOrNull()
+                val eH = endParts[0].toIntOrNull()
+                val eM = endParts[1].toIntOrNull()
                 
-                val inWindow = if (startMins <= endMins) {
-                    currentMinutes in startMins..endMins
+                if (sH != null && sM != null && eH != null && eM != null) {
+                    val startMins = sH * 60 + sM
+                    val endMins = eH * 60 + eM
+                    
+                    val inWindow = if (startMins <= endMins) {
+                        currentMinutes in startMins..endMins
+                    } else {
+                        currentMinutes >= startMins || currentMinutes <= endMins
+                    }
+                    if (!inWindow) return
                 } else {
-                    currentMinutes >= startMins || currentMinutes <= endMins
+                    // Malformed configuration, reject execution safely
+                    return
                 }
-                if (!inWindow) return
+            } else {
+                // Malformed string layout
+                return
             }
         }
         

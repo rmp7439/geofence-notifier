@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 fun RecipientsScreen(dao: AppDao, onBack: () -> Unit) {
     val recs by dao.getRecipients().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
+    var editingRec by remember { mutableStateOf<Recipient?>(null) }
     var showAdd by remember { mutableStateOf(false) }
     
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -21,7 +22,7 @@ fun RecipientsScreen(dao: AppDao, onBack: () -> Unit) {
             Row {
                 Button(onClick = onBack) { Text("Back") }
                 Spacer(modifier = Modifier.weight(1f))
-                Button(onClick = { showAdd = true }) { Text("Add Recipient") }
+                Button(onClick = { showAdd = true }) { Text("Add") }
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text("Recipients", style = MaterialTheme.typography.headlineMedium)
@@ -39,7 +40,9 @@ fun RecipientsScreen(dao: AppDao, onBack: () -> Unit) {
                                 Text("Call", modifier = Modifier.padding(end = 8.dp))
                                 Switch(checked = rec.callEnabled, onCheckedChange = { scope.launch { dao.updateRecipient(rec.copy(callEnabled = it)) } })
                             }
+                            Text("Calls: ${rec.callCount} @ ${rec.callDurationSeconds}s", style = MaterialTheme.typography.bodySmall)
                             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                IconButton(onClick = { editingRec = rec }) { Text("Edit") }
                                 IconButton(onClick = { scope.launch { dao.deleteRecipient(rec) } }) { Text("Del") }
                             }
                         }
@@ -49,30 +52,63 @@ fun RecipientsScreen(dao: AppDao, onBack: () -> Unit) {
         }
     }
     
-    if (showAdd) {
-        var name by remember { mutableStateOf("") }
-        var phone by remember { mutableStateOf("") }
+    val currentEditor = editingRec
+    if (showAdd || currentEditor != null) {
+        var name by remember { mutableStateOf(currentEditor?.name ?: "") }
+        var phone by remember { mutableStateOf(currentEditor?.phoneNumber ?: "") }
+        var smsEn by remember { mutableStateOf(currentEditor?.smsEnabled ?: true) }
+        var callEn by remember { mutableStateOf(currentEditor?.callEnabled ?: false) }
+        var callCount by remember { mutableStateOf((currentEditor?.callCount ?: 2).toString()) }
+        var callDur by remember { mutableStateOf((currentEditor?.callDurationSeconds ?: 12).toString()) }
+        var errorMsg by remember { mutableStateOf("") }
         
         AlertDialog(
-            onDismissRequest = { showAdd = false },
-            title = { Text("Add Recipient") },
+            onDismissRequest = { showAdd = false; editingRec = null },
+            title = { Text(if (currentEditor == null) "Add Recipient" else "Edit Recipient") },
             text = {
                 Column {
                     OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
                     OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("Phone") })
+                    Row {
+                        Text("SMS"); Switch(checked = smsEn, onCheckedChange = { smsEn = it })
+                        Spacer(Modifier.width(8.dp))
+                        Text("Call"); Switch(checked = callEn, onCheckedChange = { callEn = it })
+                    }
+                    if (callEn) {
+                        OutlinedTextField(value = callCount, onValueChange = { callCount = it }, label = { Text("Call Count") })
+                        OutlinedTextField(value = callDur, onValueChange = { callDur = it }, label = { Text("Call Duration (s)") })
+                    }
+                    if (errorMsg.isNotBlank()) Text(errorMsg, color = MaterialTheme.colorScheme.error)
                 }
             },
             confirmButton = {
                 Button(onClick = {
-                    if (name.isNotBlank() && phone.isNotBlank()) {
+                    val cCount = callCount.toIntOrNull()
+                    val cDur = callDur.toIntOrNull()
+                    if (name.isBlank() || phone.isBlank()) {
+                        errorMsg = "Fields cannot be blank"
+                    } else if (callEn && (cCount == null || cCount < 1 || cDur == null || cDur < 1)) {
+                        errorMsg = "Invalid call count/duration"
+                    } else {
+                        val finalRec = Recipient(
+                            id = currentEditor?.id ?: 0,
+                            name = name,
+                            phoneNumber = phone,
+                            smsEnabled = smsEn,
+                            callEnabled = callEn,
+                            callCount = cCount ?: 2,
+                            callDurationSeconds = cDur ?: 12
+                        )
                         scope.launch {
-                            dao.insertRecipient(Recipient(name = name, phoneNumber = phone, smsEnabled = true, callEnabled = false))
+                            if (currentEditor == null) dao.insertRecipient(finalRec)
+                            else dao.updateRecipient(finalRec)
                             showAdd = false
+                            editingRec = null
                         }
                     }
                 }) { Text("Save") }
             },
-            dismissButton = { Button(onClick = { showAdd = false }) { Text("Cancel") } }
+            dismissButton = { Button(onClick = { showAdd = false; editingRec = null }) { Text("Cancel") } }
         )
     }
 }
